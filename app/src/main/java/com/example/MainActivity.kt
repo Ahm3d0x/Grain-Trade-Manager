@@ -128,13 +128,8 @@ fun GrainTradeManagerApp(
                             NavigationBarItem(
                                 selected = selected,
                                 onClick = {
-                                    if (item.screen == AppScreen.PURCHASE_WORKSPACE && activeInvoice == null) {
-                                        val latest = allInvoices.firstOrNull()
-                                        if (latest != null) {
-                                            viewModel.openExistingInvoiceInWorkspace(latest.details.invoice.id)
-                                        } else {
-                                            viewModel.startNewPurchase()
-                                        }
+                                    if (item.screen == AppScreen.PURCHASE_WORKSPACE) {
+                                        viewModel.openPurchaseTabOrResumeDraft()
                                     } else {
                                         viewModel.navigateTo(item.screen)
                                     }
@@ -172,13 +167,8 @@ fun GrainTradeManagerApp(
                             NavigationRailItem(
                                 selected = selected,
                                 onClick = {
-                                    if (item.screen == AppScreen.PURCHASE_WORKSPACE && activeInvoice == null) {
-                                        val latest = allInvoices.firstOrNull()
-                                        if (latest != null) {
-                                            viewModel.openExistingInvoiceInWorkspace(latest.details.invoice.id)
-                                        } else {
-                                            viewModel.startNewPurchase()
-                                        }
+                                    if (item.screen == AppScreen.PURCHASE_WORKSPACE) {
+                                        viewModel.openPurchaseTabOrResumeDraft()
                                     } else {
                                         viewModel.navigateTo(item.screen)
                                     }
@@ -208,6 +198,7 @@ fun GrainTradeManagerApp(
                         AppScreen.PURCHASE_WORKSPACE -> {
                             PurchaseWorkspaceScreen(
                                 invoiceWithCalc = activeInvoice,
+                                heldDraftInvoices = allInvoices,
                                 activeSectionId = activeSectionId,
                                 keypadInput = keypadInput,
                                 customers = customers,
@@ -215,6 +206,8 @@ fun GrainTradeManagerApp(
                                 pricingUnits = pricingUnits,
                                 settings = settings,
                                 onStartNewPurchase = { viewModel.startNewPurchase() },
+                                onSuspendAndStartNew = { viewModel.suspendCurrentInvoiceAndStartNew() },
+                                onSwitchToHeldInvoice = { id -> viewModel.openExistingInvoiceInWorkspace(id) },
                                 onSelectSection = viewModel::selectActiveSection,
                                 onKeypadDigit = viewModel::onKeypadDigit,
                                 onKeypadBackspace = viewModel::onKeypadBackspace,
@@ -266,7 +259,7 @@ fun GrainTradeManagerApp(
                             CustomersScreen(
                                 customers = customers,
                                 invoices = allInvoices,
-                                currencySymbol = settings.currencySymbol,
+                                settings = settings,
                                 onSaveCustomer = viewModel::saveCustomer,
                                 onDeleteCustomer = viewModel::deleteCustomer,
                                 onStartPurchaseForCustomer = { cust ->

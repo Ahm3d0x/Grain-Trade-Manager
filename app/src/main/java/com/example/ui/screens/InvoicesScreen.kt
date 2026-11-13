@@ -35,7 +35,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -64,6 +63,7 @@ import com.example.ui.theme.EmeraldLight
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.StatusPaidGreen
 import com.example.ui.theme.StatusSettlementPurple
+import com.example.ui.theme.StatusUnpaidBg
 import com.example.ui.theme.StatusUnpaidRed
 import com.example.ui.theme.WheatCardBorder
 import com.example.ui.theme.WheatGold
@@ -119,7 +119,7 @@ fun InvoicesScreen(
         }
     }
 
-    val dateFormat = remember { SimpleDateFormat("yyyy/MM/dd - hh:mm a", Locale("ar", "EG")) }
+    val dateFormat = remember { SimpleDateFormat("yyyy/MM/dd - hh:mm a", Locale.forLanguageTag("ar-EG")) }
 
     LazyColumn(
         modifier = Modifier
@@ -160,7 +160,7 @@ fun InvoicesScreen(
                                     selectedStatusFilter = null
                                     selectedPaymentFilter = null
                                 },
-                                label = { Text("الكل (${invoices.size})") },
+                                label = { Text("الكل (${invoices.size})", softWrap = false, maxLines = 1) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = EmeraldPrimary,
                                     selectedLabelColor = Color.White
@@ -173,7 +173,7 @@ fun InvoicesScreen(
                                 onClick = {
                                     selectedStatusFilter = if (selectedStatusFilter == InvoiceStatus.APPROVED.name) null else InvoiceStatus.APPROVED.name
                                 },
-                                label = { Text("معتمدة") }
+                                label = { Text("معتمدة", softWrap = false, maxLines = 1) }
                             )
                         }
                         item {
@@ -182,7 +182,7 @@ fun InvoicesScreen(
                                 onClick = {
                                     selectedStatusFilter = if (selectedStatusFilter == InvoiceStatus.DRAFT.name) null else InvoiceStatus.DRAFT.name
                                 },
-                                label = { Text("مسودة") }
+                                label = { Text("مسودة", softWrap = false, maxLines = 1) }
                             )
                         }
                         items(PaymentStatus.entries) { pStatus ->
@@ -191,7 +191,7 @@ fun InvoicesScreen(
                                 onClick = {
                                     selectedPaymentFilter = if (selectedPaymentFilter == pStatus) null else pStatus
                                 },
-                                label = { Text(pStatus.labelAr) }
+                                label = { Text(pStatus.labelAr, softWrap = false, maxLines = 1) }
                             )
                         }
                     }
@@ -202,7 +202,7 @@ fun InvoicesScreen(
                             FilterChip(
                                 selected = selectedProductFilter == null,
                                 onClick = { selectedProductFilter = null },
-                                label = { Text("كل الحبوب") },
+                                label = { Text("كل الحبوب", softWrap = false, maxLines = 1) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = WheatGold,
                                     selectedLabelColor = Color.White
@@ -215,7 +215,7 @@ fun InvoicesScreen(
                                 onClick = {
                                     selectedProductFilter = if (selectedProductFilter == prod.name) null else prod.name
                                 },
-                                label = { Text(prod.name) },
+                                label = { Text(prod.name, softWrap = false, maxLines = 1) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = WheatGold,
                                     selectedLabelColor = Color.White
@@ -258,13 +258,14 @@ fun InvoicesScreen(
                         modifier = Modifier.padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        // Top Row: Invoice Number, Status Badges, and Prominent Delete Button
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Surface(shape = RoundedCornerShape(8.dp), color = EmeraldLight) {
@@ -272,14 +273,17 @@ fun InvoicesScreen(
                                         text = "فاتورة #${inv.invoiceNumber}",
                                         style = MaterialTheme.typography.labelLarge,
                                         color = EmeraldPrimary,
+                                        softWrap = false,
+                                        maxLines = 1,
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                                     )
                                 }
                                 InvoiceStatusBadge(status = inv.status)
+                                PaymentStatusBadge(paymentStatus = calc.paymentStatus)
                             }
-                            PaymentStatusBadge(paymentStatus = calc.paymentStatus)
                         }
 
+                        // Customer & Amounts Info
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -322,7 +326,6 @@ fun InvoicesScreen(
 
                         if (isExpanded) {
                             HorizontalDivider(color = WheatCardBorder)
-                            // Sections details
                             calc.sectionCalculations.forEach { secCalc ->
                                 Text(
                                     text = "• القسم ${secCalc.section.sectionOrder} (${secCalc.section.productNameSnapshot}): ${secCalc.bagCount} شكارة (${CalculationEngine.formatWeight(secCalc.totalWeightKg)} كجم) × ${CalculationEngine.formatNumber(secCalc.section.unitPrice)} / ${secCalc.section.unitNameSnapshot} = ${CalculationEngine.formatCurrency(secCalc.sectionTotalAmount, settings.currencySymbol)}",
@@ -330,7 +333,6 @@ fun InvoicesScreen(
                                 )
                             }
 
-                            // Payments History
                             if (item.details.payments.isNotEmpty()) {
                                 Text(
                                     text = "سجل الدفعات والتسويات:",
@@ -349,72 +351,125 @@ fun InvoicesScreen(
 
                         HorizontalDivider(color = WheatCardBorder)
 
-                        // Action Bar
+                        // Row 1 of Actions: Open & Edit | Record Payment | Delete Invoice (Explicitly visible outside!)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Button(
-                                    onClick = { onOpenInWorkspace(inv.id) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                                ) {
-                                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("فتح وتعديل", style = MaterialTheme.typography.labelMedium)
-                                }
-
-                                OutlinedButton(
-                                    onClick = { paymentTargetInvoice = item },
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                                ) {
-                                    Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("دفعة", style = MaterialTheme.typography.labelMedium)
-                                }
-
-                                if (calc.overpaidAmount > 0.01) {
-                                    OutlinedButton(
-                                        onClick = { settlementTargetInvoice = item },
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                                    ) {
-                                        Text("تسوية الفائض", color = StatusSettlementPurple, style = MaterialTheme.typography.labelMedium)
-                                    }
-                                }
+                            Button(
+                                onClick = { onOpenInWorkspace(inv.id) },
+                                colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                                modifier = Modifier.weight(1.2f).height(42.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("فتح وتعديل", style = MaterialTheme.typography.labelMedium, softWrap = false, maxLines = 1)
                             }
 
-                            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                IconButton(
-                                    onClick = {
-                                        PdfInvoiceExporter.shareInvoicePdf(
-                                            context = context,
-                                            details = item.details,
-                                            settings = settings,
-                                            whatsAppOnly = true
-                                        )
-                                    }
-                                ) {
-                                    Icon(Icons.Default.Share, contentDescription = "مشاركة واتساب", tint = EmeraldPrimary)
-                                }
-                                IconButton(
-                                    onClick = {
-                                        PdfInvoiceExporter.printInvoicePdf(
-                                            context = context,
-                                            details = item.details,
-                                            settings = settings
-                                        )
-                                    }
-                                ) {
-                                    Icon(Icons.Default.Print, contentDescription = "طباعة الفاتورة", tint = WheatGold)
-                                }
-                                IconButton(onClick = { auditTargetInvoice = item }) {
-                                    Icon(Icons.Default.History, contentDescription = "سجل التعديلات", tint = EmeraldPrimary)
-                                }
-                                IconButton(onClick = { deleteTargetInvoice = item }) {
-                                    Icon(Icons.Default.Delete, contentDescription = "حذف الفاتورة", tint = StatusUnpaidRed)
-                                }
+                            OutlinedButton(
+                                onClick = { paymentTargetInvoice = item },
+                                modifier = Modifier.weight(1f).height(42.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("دفعة", style = MaterialTheme.typography.labelMedium, softWrap = false, maxLines = 1)
+                            }
+
+                            OutlinedButton(
+                                onClick = { deleteTargetInvoice = item },
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = StatusUnpaidBg.copy(alpha = 0.35f),
+                                    contentColor = StatusUnpaidRed
+                                ),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(42.dp)
+                                    .testTag("delete_invoice_btn_${inv.invoiceNumber}"),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("حذف", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, softWrap = false, maxLines = 1)
+                            }
+                        }
+
+                        // Row 2 of Actions: Share WhatsApp | Export PDF | Print | Audit History
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    PdfInvoiceExporter.shareInvoicePdf(
+                                        context = context,
+                                        details = item.details,
+                                        settings = settings,
+                                        whatsAppOnly = true
+                                    )
+                                },
+                                modifier = Modifier.weight(1f).height(38.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Icon(Icons.Default.Share, contentDescription = null, tint = EmeraldPrimary, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("واتساب", style = MaterialTheme.typography.labelMedium, softWrap = false, maxLines = 1)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    PdfInvoiceExporter.shareInvoicePdf(
+                                        context = context,
+                                        details = item.details,
+                                        settings = settings,
+                                        whatsAppOnly = false
+                                    )
+                                },
+                                modifier = Modifier.weight(1f).height(38.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = WheatGold, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("PDF", style = MaterialTheme.typography.labelMedium, softWrap = false, maxLines = 1)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    PdfInvoiceExporter.printInvoicePdf(
+                                        context = context,
+                                        details = item.details,
+                                        settings = settings
+                                    )
+                                },
+                                modifier = Modifier.weight(1f).height(38.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Icon(Icons.Default.Print, contentDescription = null, tint = WheatGold, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("طباعة", style = MaterialTheme.typography.labelMedium, softWrap = false, maxLines = 1)
+                            }
+
+                            OutlinedButton(
+                                onClick = { auditTargetInvoice = item },
+                                modifier = Modifier.weight(1f).height(38.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Icon(Icons.Default.History, contentDescription = null, tint = EmeraldPrimary, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("السجل", style = MaterialTheme.typography.labelMedium, softWrap = false, maxLines = 1)
+                            }
+                        }
+
+                        if (calc.overpaidAmount > 0.01) {
+                            Button(
+                                onClick = { settlementTargetInvoice = item },
+                                colors = ButtonDefaults.buttonColors(containerColor = StatusSettlementPurple),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("تسوية الفائض المالي (${CalculationEngine.formatCurrency(calc.overpaidAmount, settings.currencySymbol)})")
                             }
                         }
 
@@ -422,7 +477,7 @@ fun InvoicesScreen(
                             onClick = { expandedInvoiceId = if (isExpanded) null else inv.id },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(if (isExpanded) "إخفاء التفاصيل السريعة ▲" else "عرض تفصيل الأقسام والدفعات ▼")
+                            Text(if (isExpanded) "إخفاء تفصيل الأقسام والدفعات ▲" else "عرض تفصيل الأقسام والدفعات ▼")
                         }
                     }
                 }
@@ -475,8 +530,15 @@ fun InvoicesScreen(
     deleteTargetInvoice?.let { target ->
         AlertDialog(
             onDismissRequest = { deleteTargetInvoice = null },
-            title = { Text("تأكيد حذف الفاتورة #${target.details.invoice.invoiceNumber}") },
-            text = { Text("هل أنت متأكد من حذف هذه الفاتورة وجميع أوزانها؟ لا يمكن التراجع عن هذا الإجراء.") },
+            title = {
+                Text(
+                    text = "تأكيد حذف الفاتورة #${target.details.invoice.invoiceNumber}",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text("هل أنت متأكد من حذف فاتورة العميل «${target.details.invoice.customerNameSnapshot}» وجميع أوزانها نهائيًا؟ لا يمكن التراجع عن هذا الإجراء.")
+            },
             confirmButton = {
                 Button(
                     onClick = {
@@ -485,7 +547,7 @@ fun InvoicesScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = StatusUnpaidRed)
                 ) {
-                    Text("حذف نهائي")
+                    Text("نعم، احذف الفاتورة")
                 }
             },
             dismissButton = {

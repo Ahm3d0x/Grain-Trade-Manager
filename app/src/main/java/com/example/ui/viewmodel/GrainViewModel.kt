@@ -1,6 +1,7 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.AppSettingsEntity
@@ -9,7 +10,6 @@ import com.example.data.local.FullInvoiceDetails
 import com.example.data.local.GrainDatabase
 import com.example.data.local.InvoiceSectionEntity
 import com.example.data.local.InvoiceStatus
-import com.example.data.local.PaymentStatus
 import com.example.data.local.PricingUnitEntity
 import com.example.data.local.ProductEntity
 import com.example.data.local.WeightEntity
@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
@@ -51,6 +52,7 @@ data class InvoiceWithCalc(
 @OptIn(ExperimentalCoroutinesApi::class)
 class GrainViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = GrainRepository(GrainDatabase.getInstance(application))
+    private val prefs = application.getSharedPreferences("grain_workspace_prefs", Context.MODE_PRIVATE)
 
     private val _currentScreen = MutableStateFlow(AppScreen.DASHBOARD)
     val currentScreen: StateFlow<AppScreen> = _currentScreen.asStateFlow()
@@ -108,8 +110,70 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    init {
+        // Restore active draft invoice automatically if app was closed or restarted
+        viewModelScope.launch {
+            val savedInvId = prefs.getLong(KEY_ACTIVE_INVOICE_ID, -1L).takeIf { it > 0L }
+            val savedSecId = prefs.getLong(KEY_ACTIVE_SECTION_ID, -1L).takeIf { it > 0L }
+
+            if (savedInvId != null) {
+                val existing = repository.getInvoiceByIdOnce(savedInvId)
+                if (existing != null && existing.invoice.status == InvoiceStatus.DRAFT.name) {
+                    _activeInvoiceId.value = savedInvId
+                    _activeSectionId.value = savedSecId
+                        ?: existing.sections.maxByOrNull { it.section.sectionOrder }?.section?.id
+                    return@launch
+                }
+            }
+
+            // Fallback: check if there is any existing DRAFT invoice to resume
+            val all = repository.allInvoicesFlow.first()
+            val latestDraft = all.firstOrNull { it.invoice.status == InvoiceStatus.DRAFT.name }
+            if (latestDraft != null) {
+                setActiveWorkspaceIds(
+                    invoiceId = latestDraft.invoice.id,
+                    sectionId = latestDraft.sections.maxByOrNull { it.section.sectionOrder }?.section?.id
+                )
+            }
+        }
+    }
+
+    private fun setActiveWorkspaceIds(invoiceId: Long?, sectionId: Long?) {
+        _activeInvoiceId.value = invoiceId
+        _activeSectionId.value = sectionId
+        prefs.edit().apply {
+            if (invoiceId != null) putLong(KEY_ACTIVE_INVOICE_ID, invoiceId) else remove(KEY_ACTIVE_INVOICE_ID)
+            if (sectionId != null) putLong(KEY_ACTIVE_SECTION_ID, sectionId) else remove(KEY_ACTIVE_SECTION_ID)
+        }.apply()
+    }
+
     fun navigateTo(screen: AppScreen) {
         _currentScreen.value = screen
+    }
+
+    fun openPurchaseTabOrResumeDraft() {
+        viewModelScope.launch {
+            val currentId = _activeInvoiceId.value
+            if (currentId != null) {
+                val currentInv = repository.getInvoiceByIdOnce(currentId)
+                if (currentInv != null && currentInv.invoice.status == InvoiceStatus.DRAFT.name) {
+                    _currentScreen.value = AppScreen.PURCHASE_WORKSPACE
+                    return@launch
+                }
+            }
+            // Look for any suspended/draft invoice first
+            val all = repository.allInvoicesFlow.first()
+            val latestDraft = all.firstOrNull { it.invoice.status == InvoiceStatus.DRAFT.name }
+            if (latestDraft != null) {
+                setActiveWorkspaceIds(
+                    invoiceId = latestDraft.invoice.id,
+                    sectionId = latestDraft.sections.maxByOrNull { it.section.sectionOrder }?.section?.id
+                )
+                _currentScreen.value = AppScreen.PURCHASE_WORKSPACE
+            } else {
+                startNewPurchase()
+            }
+        }
     }
 
     fun setDashboardPeriod(period: DashboardPeriod) {
@@ -122,32 +186,6 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun showMessage(msg: String) {
         _statusMessage.value = msg
-    }
-
-    fun filterInvoicesByPeriod(
-        invoices: List<InvoiceWithCalc>,
-        period: DashboardPeriod
-    ): List<InvoiceWithCalc> {
-        if (period == DashboardPeriod.ALL) return invoices
-        val cal = Calendar.getInstance()
-        cal.set(Calendar.HOUR_OF_DAY, 0)
-        cal.set(Calendar.MINUTE, 0)
-        cal.set(Calendar.SECOND, 0)
-        cal.set(Calendar.MILLISECOND, 0)
-
-        val startMillis = when (period) {
-            DashboardPeriod.TODAY -> cal.timeInMillis
-            DashboardPeriod.THIS_WEEK -> {
-                cal.add(Calendar.DAY_OF_YEAR, -7)
-                cal.timeInMillis
-            }
-            DashboardPeriod.THIS_MONTH -> {
-                cal.add(Calendar.DAY_OF_YEAR, -30)
-                cal.timeInMillis
-            }
-            DashboardPeriod.ALL -> 0L
-        }
-        return invoices.filter { it.details.invoice.invoiceDate >= startMillis }
     }
 
     // --- Keypad Controls ---
@@ -175,10 +213,6 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
         _keypadInput.value = ""
     }
 
-    fun setKeypadValue(value: String) {
-        _keypadInput.value = value
-    }
-
     // --- Purchase Workspace Actions ---
     fun startNewPurchase(
         customer: CustomerEntity? = null,
@@ -187,42 +221,92 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
         initialPrice: Double = 4000.0
     ) {
         viewModelScope.launch {
-            val activeProducts = products.value.filter { it.isActive }.ifEmpty { products.value }
-            val activeUnits = pricingUnits.value.filter { it.isActive }.ifEmpty { pricingUnits.value }
+            // If the currently active invoice is an empty DRAFT (0 weights), reuse it instead of creating duplicate empty drafts
+            val currentId = _activeInvoiceId.value
+            if (currentId != null && customer == null) {
+                val existing = repository.getInvoiceByIdOnce(currentId)
+                val totalWeights = existing?.sections?.sumOf { it.weights.size } ?: -1
+                if (existing != null && existing.invoice.status == InvoiceStatus.DRAFT.name && totalWeights == 0) {
+                    setActiveWorkspaceIds(
+                        invoiceId = existing.invoice.id,
+                        sectionId = existing.sections.firstOrNull()?.section?.id
+                    )
+                    _keypadInput.value = ""
+                    _currentScreen.value = AppScreen.PURCHASE_WORKSPACE
+                    return@launch
+                }
+            }
 
-            val chosenProduct = initialProduct ?: activeProducts.firstOrNull()
-                ?: ProductEntity(id = 1, name = "قمح")
-            val chosenUnit = initialUnit
-                ?: activeUnits.firstOrNull { it.linkedProductId == chosenProduct.id }
-                ?: activeUnits.firstOrNull()
-                ?: PricingUnitEntity(id = 1, name = "طن", weightKg = 1000.0)
-
-            val newId = repository.createNewDraftInvoice(
-                customer = customer,
-                initialProduct = chosenProduct,
-                initialUnit = chosenUnit,
-                initialUnitPrice = initialPrice
-            )
-            val created = repository.getInvoiceByIdOnce(newId)
-            _activeInvoiceId.value = newId
-            _activeSectionId.value = created?.sections?.firstOrNull()?.section?.id
-            _keypadInput.value = ""
-            _currentScreen.value = AppScreen.PURCHASE_WORKSPACE
+            createBlankDraftInvoiceInternal(customer, initialProduct, initialUnit, initialPrice)
         }
+    }
+
+    /**
+     * Suspends (holds) the current draft invoice with all its data preserved in Room,
+     * and immediately opens a brand-new blank invoice so the merchant can serve another customer.
+     */
+    fun suspendCurrentInvoiceAndStartNew() {
+        viewModelScope.launch {
+            val currentInv = activeInvoiceWithCalc.value?.details?.invoice
+            createBlankDraftInvoiceInternal(
+                customer = null,
+                initialProduct = null,
+                initialUnit = null,
+                initialPrice = 4000.0
+            )
+            if (currentInv != null) {
+                showMessage("تم تعليق الفاتورة #${currentInv.invoiceNumber} وحفظ بياناتها، وفتح فاتورة جديدة")
+            } else {
+                showMessage("تم فتح فاتورة جديدة")
+            }
+        }
+    }
+
+    private suspend fun createBlankDraftInvoiceInternal(
+        customer: CustomerEntity?,
+        initialProduct: ProductEntity?,
+        initialUnit: PricingUnitEntity?,
+        initialPrice: Double
+    ) {
+        val activeProducts = products.value.filter { it.isActive }.ifEmpty { products.value }
+        val activeUnits = pricingUnits.value.filter { it.isActive }.ifEmpty { pricingUnits.value }
+
+        val chosenProduct = initialProduct ?: activeProducts.firstOrNull()
+            ?: ProductEntity(id = 1, name = "قمح")
+        val chosenUnit = initialUnit
+            ?: activeUnits.firstOrNull { it.linkedProductId == chosenProduct.id }
+            ?: activeUnits.firstOrNull()
+            ?: PricingUnitEntity(id = 1, name = "طن", weightKg = 1000.0)
+
+        val newId = repository.createNewDraftInvoice(
+            customer = customer,
+            initialProduct = chosenProduct,
+            initialUnit = chosenUnit,
+            initialUnitPrice = initialPrice
+        )
+        val created = repository.getInvoiceByIdOnce(newId)
+        setActiveWorkspaceIds(
+            invoiceId = newId,
+            sectionId = created?.sections?.firstOrNull()?.section?.id
+        )
+        _keypadInput.value = ""
+        _currentScreen.value = AppScreen.PURCHASE_WORKSPACE
     }
 
     fun openExistingInvoiceInWorkspace(invoiceId: Long) {
         viewModelScope.launch {
             val existing = repository.getInvoiceByIdOnce(invoiceId)
-            _activeInvoiceId.value = invoiceId
-            _activeSectionId.value = existing?.sections?.minByOrNull { it.section.sectionOrder }?.section?.id
+            setActiveWorkspaceIds(
+                invoiceId = invoiceId,
+                sectionId = existing?.sections?.minByOrNull { it.section.sectionOrder }?.section?.id
+            )
             _keypadInput.value = ""
             _currentScreen.value = AppScreen.PURCHASE_WORKSPACE
         }
     }
 
     fun selectActiveSection(sectionId: Long) {
-        _activeSectionId.value = sectionId
+        setActiveWorkspaceIds(_activeInvoiceId.value, sectionId)
     }
 
     fun addWeightFromKeypad(auditReason: String? = null) {
@@ -298,7 +382,7 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
                 unitPrice = unitPrice,
                 auditReason = auditReason
             )
-            _activeSectionId.value = newSecId
+            setActiveWorkspaceIds(inv.details.invoice.id, newSecId)
             showMessage("تم إضافة قسم جديد (${product.name})")
         }
     }
@@ -320,7 +404,6 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
                 preserveHistoricalUnitWeight = preserveHistoricalWeight,
                 auditReason = auditReason
             )
-            showMessage("تم تحديث إعدادات وسعر القسم ${section.sectionOrder}")
         }
     }
 
@@ -340,7 +423,7 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
                 auditReason = auditReason
             )
             val updated = repository.getInvoiceByIdOnce(inv.details.invoice.id)
-            _activeSectionId.value = updated?.sections?.firstOrNull()?.section?.id
+            setActiveWorkspaceIds(inv.details.invoice.id, updated?.sections?.firstOrNull()?.section?.id)
             showMessage("تم حذف القسم وإعادة حساب الفاتورة")
         }
     }
@@ -358,19 +441,31 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
                 notes = notes,
                 auditReason = auditReason
             )
-            showMessage("تم تحديث بيانات العميل والملاحظات")
         }
     }
 
+    /**
+     * Approves & saves the active invoice, then immediately clears/resets the purchase workspace
+     * by opening a brand-new blank invoice (or resuming another held draft if any) so the screen
+     * does not keep old data after saving!
+     */
     fun approveActiveInvoice() {
         val inv = activeInvoiceWithCalc.value ?: return
         if (inv.calc.totalBagCount == 0) {
-            showMessage("لا يمكن اعتماد فاتورة فارغة بدون أوزان")
+            showMessage("لا يمكن حفظ واعتماد فاتورة فارغة بدون أوزان")
             return
         }
         viewModelScope.launch {
+            val approvedNum = inv.details.invoice.invoiceNumber
             repository.approveInvoice(inv.details.invoice)
-            showMessage("تم اعتماد الفاتورة رقم #${inv.details.invoice.invoiceNumber} بنجاح")
+            // Clear the workspace and prepare a fresh blank invoice ready for the next customer
+            createBlankDraftInvoiceInternal(
+                customer = null,
+                initialProduct = null,
+                initialUnit = null,
+                initialPrice = 4000.0
+            )
+            showMessage("تم حفظ واعتماد الفاتورة #$approvedNum وتفريغ الشاشة لفاتورة جديدة")
         }
     }
 
@@ -379,7 +474,7 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
             val inv = repository.getInvoiceByIdOnce(invoiceId) ?: return@launch
             repository.deleteInvoice(inv.invoice)
             if (_activeInvoiceId.value == invoiceId) {
-                _activeInvoiceId.value = null
+                setActiveWorkspaceIds(null, null)
                 _currentScreen.value = AppScreen.INVOICES
             }
             showMessage("تم حذف الفاتورة #${inv.invoice.invoiceNumber}")
@@ -487,5 +582,10 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
                 showMessage("ملف النسخة الاحتياطية غير صالح: ${e.localizedMessage}")
             }
         }
+    }
+
+    companion object {
+        private const val KEY_ACTIVE_INVOICE_ID = "active_invoice_id"
+        private const val KEY_ACTIVE_SECTION_ID = "active_section_id"
     }
 }

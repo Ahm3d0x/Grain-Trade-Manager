@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -94,15 +95,10 @@ import com.example.ui.theme.WheatGoldLight
 import com.example.ui.viewmodel.InvoiceWithCalc
 import com.example.util.PdfInvoiceExporter
 
-/**
- * Multi-page wizard for creating and editing an invoice:
- * - Page 0: Customer & First Section Setup (العميل والمحصول)
- * - Page 1..N: Dedicated Page per Section for fast Weight Entry & 5-Weight Columns (صفحة مستقلة لكل قسم)
- * - Page N+1: Final Summary, Pricing, Payments, PDF Export & Share (الملخص والمحاسبة)
- */
 @Composable
 fun PurchaseWorkspaceScreen(
     invoiceWithCalc: InvoiceWithCalc?,
+    heldDraftInvoices: List<InvoiceWithCalc> = emptyList(),
     activeSectionId: Long?,
     keypadInput: String,
     customers: List<CustomerEntity>,
@@ -110,6 +106,8 @@ fun PurchaseWorkspaceScreen(
     pricingUnits: List<PricingUnitEntity>,
     settings: AppSettingsEntity,
     onStartNewPurchase: () -> Unit,
+    onSuspendAndStartNew: () -> Unit = {},
+    onSwitchToHeldInvoice: (Long) -> Unit = {},
     onSelectSection: (Long) -> Unit,
     onKeypadDigit: (String) -> Unit,
     onKeypadBackspace: () -> Unit,
@@ -165,6 +163,14 @@ fun PurchaseWorkspaceScreen(
     val sectionsCount = calc.sectionCalculations.size
     val summaryStepIndex = sectionsCount + 1
 
+    // Other suspended/draft invoices excluding the current one
+    val otherDrafts = remember(heldDraftInvoices, inv.id) {
+        heldDraftInvoices.filter {
+            it.details.invoice.id != inv.id &&
+                it.details.invoice.status == InvoiceStatus.DRAFT.name
+        }
+    }
+
     // Wizard step state:
     // 0 = Customer & initial setup
     // 1..sectionsCount = Individual Section Page
@@ -173,7 +179,6 @@ fun PurchaseWorkspaceScreen(
         mutableIntStateOf(if (calc.totalBagCount > 0) 1 else 0)
     }
 
-    // Keep currentStep valid when sections are added or removed
     LaunchedEffect(sectionsCount, activeSectionId) {
         val matchedIndex = calc.sectionCalculations.indexOfFirst { it.section.id == activeSectionId }
         if (matchedIndex >= 0 && currentStep in 1..sectionsCount) {
@@ -190,6 +195,7 @@ fun PurchaseWorkspaceScreen(
     var showSettlementDialog by remember { mutableStateOf(false) }
     var showAuditLogsDialog by remember { mutableStateOf(false) }
     var showDeleteInvoiceConfirm by remember { mutableStateOf(false) }
+    var showHeldInvoicesDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -197,7 +203,7 @@ fun PurchaseWorkspaceScreen(
             .background(MaterialTheme.colorScheme.background)
             .testTag("purchase_workspace_screen")
     ) {
-        // 1. Compact Top Bar + Wizard Step Bar (Takes minimal height!)
+        // 1. Compact Top Bar + Wizard Step Bar
         Surface(
             color = MaterialTheme.colorScheme.surface,
             shadowElevation = 2.dp,
@@ -216,15 +222,15 @@ fun PurchaseWorkspaceScreen(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
                             text = "فاتورة #${inv.invoiceNumber}",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            softWrap = false,
+                            maxLines = 1
                         )
                         InvoiceStatusBadge(status = inv.status)
                         Text(
@@ -236,11 +242,67 @@ fun PurchaseWorkspaceScreen(
                         )
                     }
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        // Button to switch between held/suspended invoices if any exist
+                        if (otherDrafts.isNotEmpty()) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = StatusSettlementBg,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { showHeldInvoicesDialog = true }
+                                    .testTag("open_held_invoices_button")
+                            ) {
+                                Text(
+                                    text = "معلقة (${otherDrafts.size})",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = StatusSettlementPurple,
+                                    fontWeight = FontWeight.Bold,
+                                    softWrap = false,
+                                    maxLines = 1,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                                )
+                            }
+                        }
+
+                        // Hold / Suspend Current Invoice & Start New One
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = EmeraldLight,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onSuspendAndStartNew() }
+                                .testTag("suspend_and_new_invoice_button")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PauseCircle,
+                                    contentDescription = null,
+                                    tint = EmeraldPrimary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = if (isApproved) "فاتورة جديدة" else "تعليق + جديد",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = EmeraldPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    softWrap = false,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
                         if (invoiceWithCalc.details.auditLogs.isNotEmpty()) {
                             IconButton(
                                 onClick = { showAuditLogsDialog = true },
-                                modifier = Modifier.size(34.dp).testTag("open_audit_logs_button")
+                                modifier = Modifier.size(32.dp).testTag("open_audit_logs_button")
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.History,
@@ -252,7 +314,7 @@ fun PurchaseWorkspaceScreen(
                         }
                         IconButton(
                             onClick = { showDeleteInvoiceConfirm = true },
-                            modifier = Modifier.size(34.dp).testTag("delete_invoice_top_button")
+                            modifier = Modifier.size(32.dp).testTag("delete_invoice_top_button")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Delete,
@@ -270,7 +332,6 @@ fun PurchaseWorkspaceScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    // Step 0: Customer & Grain Setup
                     item {
                         WizardStepPill(
                             title = "1. العميل",
@@ -281,7 +342,6 @@ fun PurchaseWorkspaceScreen(
                         )
                     }
 
-                    // Steps 1..N: Dedicated Page for Each Section
                     items(calc.sectionCalculations.size) { index ->
                         val secCalc = calc.sectionCalculations[index]
                         val stepNum = index + 1
@@ -297,7 +357,6 @@ fun PurchaseWorkspaceScreen(
                         )
                     }
 
-                    // Single Clean Button to Add a New Section
                     item {
                         Surface(
                             shape = RoundedCornerShape(10.dp),
@@ -331,7 +390,6 @@ fun PurchaseWorkspaceScreen(
                         }
                     }
 
-                    // Final Step: Summary & Accounting
                     item {
                         WizardStepPill(
                             title = "الملخص والمحاسبة",
@@ -384,7 +442,6 @@ fun PurchaseWorkspaceScreen(
                         onBackspace = onKeypadBackspace,
                         onClear = onKeypadClear,
                         onSubmitWeight = {
-                            // Never block weight entry with mandatory audit popup!
                             val autoReason = if (isApproved) "إضافة وزن" else null
                             onAddWeightFromKeypad(autoReason)
                         },
@@ -415,6 +472,7 @@ fun PurchaseWorkspaceScreen(
                         onOpenPaymentDialog = { showPaymentDialog = true },
                         onOpenSettlementDialog = { showSettlementDialog = true },
                         onApproveInvoice = onApproveInvoice,
+                        onStartNewBlankInvoice = onSuspendAndStartNew,
                         onShareWhatsAppPdf = {
                             PdfInvoiceExporter.shareInvoicePdf(
                                 context = context,
@@ -446,6 +504,69 @@ fun PurchaseWorkspaceScreen(
     }
 
     // --- Dialogs ---
+    if (showHeldInvoicesDialog) {
+        AlertDialog(
+            onDismissRequest = { showHeldInvoicesDialog = false },
+            title = {
+                Text(
+                    text = "الفواتير المعلقة / المسودات المحفوظة (${otherDrafts.size})",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(otherDrafts, key = { it.details.invoice.id }) { draftItem ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = EmeraldLight.copy(alpha = 0.5f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, WheatCardBorder, RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    showHeldInvoicesDialog = false
+                                    onSwitchToHeldInvoice(draftItem.details.invoice.id)
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "فاتورة #${draftItem.details.invoice.invoiceNumber} — ${draftItem.details.invoice.customerNameSnapshot}",
+                                        fontWeight = FontWeight.Bold,
+                                        color = EmeraldPrimary
+                                    )
+                                    Text(
+                                        text = "${draftItem.calc.totalBagCount} شكارة • ${CalculationEngine.formatWeight(draftItem.calc.totalWeightKg)} كجم",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                                Text(
+                                    text = "استكمال ◀",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = EmeraldPrimary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showHeldInvoicesDialog = false }) {
+                    Text("إغلاق")
+                }
+            }
+        )
+    }
+
     if (showAddSectionDialog) {
         AddOrEditSectionDialog(
             isEdit = false,
@@ -638,7 +759,7 @@ private fun CustomerAndGrainStepPage(
         )
     }
     var unitPriceText by remember(firstSection?.unitPrice) {
-        mutableStateOf(firstSection?.unitPrice?.toString() ?: "4000")
+        mutableStateOf(firstSection?.unitPrice?.let { CalculationEngine.formatPlainInt(it) } ?: "4000")
     }
 
     val filteredCustomers = remember(customers, searchQuery) {
@@ -653,7 +774,6 @@ private fun CustomerAndGrainStepPage(
         contentPadding = PaddingValues(14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // 1. Customer Selection Card
         item {
             Card(
                 modifier = Modifier
@@ -784,7 +904,6 @@ private fun CustomerAndGrainStepPage(
             }
         }
 
-        // 2. Grain Type & Initial Pricing Card for Section 1
         item {
             Card(
                 modifier = Modifier
@@ -882,7 +1001,6 @@ private fun CustomerAndGrainStepPage(
             }
         }
 
-        // 3. Proceed to Weighing Page Button
         item {
             Button(
                 onClick = {
@@ -932,7 +1050,7 @@ private fun SectionWeighingStepPage(
         contentPadding = PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // 1. Compact Section Info Strip + Quick Keypad Card
+        // 1. Compact Section Info Strip + Swapped Keypad (C in top bar, "+ إضافة" in bottom-right of keypad!)
         item {
             Card(
                 modifier = Modifier
@@ -945,7 +1063,6 @@ private fun SectionWeighingStepPage(
                     modifier = Modifier.padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Single compact line for section product, bag count, weight & price edit
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -986,7 +1103,7 @@ private fun SectionWeighingStepPage(
                         }
                     }
 
-                    // Weight Input Display + Add Button
+                    // Top Display Row: Weight Input Box + "C" (Clear) Button (Swapped as requested!)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1008,7 +1125,7 @@ private fun SectionWeighingStepPage(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = if (keypadInput.isEmpty()) "0.0" else keypadInput,
+                                    text = if (keypadInput.isEmpty()) "0" else keypadInput,
                                     style = MaterialTheme.typography.titleLarge,
                                     color = if (keypadInput.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else EmeraldPrimary,
                                     fontWeight = FontWeight.Bold,
@@ -1024,33 +1141,36 @@ private fun SectionWeighingStepPage(
                             }
                         }
 
-                        Button(
-                            onClick = onSubmitWeight,
-                            shape = RoundedCornerShape(23.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF111827),
-                                contentColor = Color.White
-                            ),
+                        // "C" Button now sits where "وزن جديد +" used to be!
+                        Surface(
                             modifier = Modifier
+                                .width(78.dp)
                                 .height(46.dp)
-                                .testTag("submit_weight_button")
+                                .clip(RoundedCornerShape(23.dp))
+                                .border(1.dp, WheatGold, RoundedCornerShape(23.dp))
+                                .clickable { onClear() }
+                                .testTag("keypad_key_C"),
+                            shape = RoundedCornerShape(23.dp),
+                            color = WheatGoldLight
                         ) {
-                            Text(
-                                text = "وزن جديد +",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                softWrap = false,
-                                maxLines = 1
-                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "C",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = WheatGold
+                                )
+                            }
                         }
                     }
 
-                    // Compact 4-Row Numeric Keypad
+                    // Compact 4-Row Numeric Keypad:
+                    // Bottom-right key (where "C" used to be) is now the prominent "+ إضافة" (Add Weight) button!
                     val rows = listOf(
                         listOf("7", "8", "9"),
                         listOf("4", "5", "6"),
                         listOf("1", "2", "3"),
-                        listOf("C", "0", ".", "⌫")
+                        listOf("ADD", "0", "⌫")
                     )
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         rows.forEach { rowKeys ->
@@ -1059,42 +1179,60 @@ private fun SectionWeighingStepPage(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 rowKeys.forEach { key ->
+                                    val isAddKey = key == "ADD"
                                     Surface(
                                         modifier = Modifier
-                                            .weight(1f)
-                                            .height(40.dp)
+                                            .weight(if (isAddKey) 1.35f else 1f)
+                                            .height(44.dp)
                                             .clip(RoundedCornerShape(10.dp))
-                                            .border(1.dp, WheatCardBorder, RoundedCornerShape(10.dp))
+                                            .border(
+                                                width = 1.dp,
+                                                color = if (isAddKey) EmeraldPrimary else WheatCardBorder,
+                                                shape = RoundedCornerShape(10.dp)
+                                            )
                                             .clickable {
                                                 when (key) {
-                                                    "C" -> onClear()
+                                                    "ADD" -> onSubmitWeight()
                                                     "⌫" -> onBackspace()
                                                     else -> onDigit(key)
                                                 }
                                             }
-                                            .testTag("keypad_key_$key"),
+                                            .testTag(if (isAddKey) "submit_weight_button" else "keypad_key_$key"),
                                         shape = RoundedCornerShape(10.dp),
                                         color = when (key) {
-                                            "C" -> WheatGoldLight
+                                            "ADD" -> EmeraldPrimary
                                             "⌫" -> MaterialTheme.colorScheme.surfaceVariant
                                             else -> MaterialTheme.colorScheme.background
                                         }
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
-                                            if (key == "⌫") {
-                                                Icon(
-                                                    imageVector = Icons.AutoMirrored.Filled.Backspace,
-                                                    contentDescription = "حذف رقم",
-                                                    tint = MaterialTheme.colorScheme.onSurface,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                            } else {
-                                                Text(
-                                                    text = key,
-                                                    fontSize = 16.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    textAlign = TextAlign.Center
-                                                )
+                                            when (key) {
+                                                "ADD" -> {
+                                                    Text(
+                                                        text = "إضافة +",
+                                                        style = MaterialTheme.typography.labelLarge,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color.White,
+                                                        softWrap = false,
+                                                        maxLines = 1
+                                                    )
+                                                }
+                                                "⌫" -> {
+                                                    Icon(
+                                                        imageVector = Icons.AutoMirrored.Filled.Backspace,
+                                                        contentDescription = "حذف رقم",
+                                                        tint = MaterialTheme.colorScheme.onSurface,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                }
+                                                else -> {
+                                                    Text(
+                                                        text = key,
+                                                        fontSize = 17.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        textAlign = TextAlign.Center
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -1106,7 +1244,7 @@ private fun SectionWeighingStepPage(
             }
         }
 
-        // 2. 5-Weight Columns Table directly underneath the keypad!
+        // 2. 5-Weight Columns Table directly underneath the keypad
         item {
             FiveWeightColumnsSection(
                 secCalc = secCalc,
@@ -1114,7 +1252,7 @@ private fun SectionWeighingStepPage(
             )
         }
 
-        // 3. Bottom Step Navigation Buttons (Previous / Next Section or Final Summary)
+        // 3. Bottom Step Navigation Buttons
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1160,6 +1298,7 @@ private fun FinalSummaryStepPage(
     onOpenPaymentDialog: () -> Unit,
     onOpenSettlementDialog: () -> Unit,
     onApproveInvoice: () -> Unit,
+    onStartNewBlankInvoice: () -> Unit,
     onShareWhatsAppPdf: () -> Unit,
     onShareGeneralPdf: () -> Unit,
     onPrintPdf: () -> Unit,
@@ -1302,7 +1441,7 @@ private fun FinalSummaryStepPage(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text(
-                                        text = "سعر الكيلو: ${CalculationEngine.formatNumber(secCalc.pricePerKg, 3)} ${settings.currencySymbol}",
+                                        text = "وحدة المحاسبة: ${sec.unitNameSnapshot} (${CalculationEngine.formatWeight(sec.unitWeightSnapshot)} كجم)",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -1375,7 +1514,7 @@ private fun FinalSummaryStepPage(
             }
         }
 
-        // Actions Card (Payments, Approve, PDF Export, Print, Delete)
+        // Actions Card (Payments, Save & Approve & Reset Workspace, PDF Export, Print, Delete)
         item {
             Card(
                 modifier = Modifier
@@ -1388,37 +1527,54 @@ private fun FinalSummaryStepPage(
                     modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
+                    if (!isApproved) {
                         Button(
-                            onClick = onOpenPaymentDialog,
-                            colors = ButtonDefaults.buttonColors(containerColor = WheatGold),
+                            onClick = onApproveInvoice,
+                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
                             modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .testTag("workspace_record_payment_button")
+                                .fillMaxWidth()
+                                .height(50.dp)
+                                .testTag("workspace_approve_invoice_button")
                         ) {
-                            Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("تسجيل دفعة", softWrap = false, maxLines = 1)
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "حفظ واعتماد الفاتورة (وتجهيز فاتورة جديدة)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                softWrap = false,
+                                maxLines = 1
+                            )
                         }
+                    } else {
+                        Button(
+                            onClick = onStartNewBlankInvoice,
+                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "تفريغ الشاشة وبدء فاتورة جديدة",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
 
-                        if (!isApproved) {
-                            Button(
-                                onClick = onApproveInvoice,
-                                colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(48.dp)
-                                    .testTag("workspace_approve_invoice_button")
-                            ) {
-                                Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("اعتماد الفاتورة", softWrap = false, maxLines = 1)
-                            }
-                        }
+                    Button(
+                        onClick = onOpenPaymentDialog,
+                        colors = ButtonDefaults.buttonColors(containerColor = WheatGold),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp)
+                            .testTag("workspace_record_payment_button")
+                    ) {
+                        Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("تسجيل دفعة سداد", softWrap = false, maxLines = 1)
                     }
 
                     Row(
@@ -1434,7 +1590,7 @@ private fun FinalSummaryStepPage(
                         ) {
                             Icon(Icons.Default.Share, contentDescription = null, tint = EmeraldPrimary, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("واتساب PDF", softWrap = false, maxLines = 1)
+                            Text("واتساب", softWrap = false, maxLines = 1)
                         }
 
                         OutlinedButton(
@@ -1446,7 +1602,7 @@ private fun FinalSummaryStepPage(
                         ) {
                             Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = WheatGold, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("تصدير PDF", softWrap = false, maxLines = 1)
+                            Text("PDF", softWrap = false, maxLines = 1)
                         }
 
                         OutlinedButton(
@@ -1502,15 +1658,19 @@ private fun FiveWeightColumnsSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "جدول الأوزان (5 أوزان لكل عمود)",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
+                    text = "جدول الأوزان (5 أوزان بالعمود)",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    softWrap = false,
+                    maxLines = 1
                 )
                 Text(
-                    text = "الإجمالي: ${CalculationEngine.formatWeight(secCalc.totalWeightKg)} كجم (${secCalc.bagCount} شكارة)",
+                    text = "${CalculationEngine.formatWeight(secCalc.totalWeightKg)} كجم (${secCalc.bagCount} شكارة)",
                     style = MaterialTheme.typography.labelLarge,
                     color = EmeraldPrimary,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    softWrap = false,
+                    maxLines = 1
                 )
             }
 
@@ -1521,7 +1681,7 @@ private fun FiveWeightColumnsSection(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "ادخل الوزن من الأعلى واضغط «وزن جديد +» ليظهر هنا في أعمدة خماسية.",
+                        text = "أدخل الوزن واضغط «إضافة +» ليظهر هنا في أعمدة خماسية.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(12.dp)
@@ -1591,7 +1751,7 @@ private fun WeightColumnCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "${CalculationEngine.formatWeight(w.weightKg)} كجم",
+                        text = CalculationEngine.formatWeight(w.weightKg),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -1618,7 +1778,7 @@ private fun WeightColumnCard(
                     style = MaterialTheme.typography.labelMedium
                 )
                 Text(
-                    text = "${CalculationEngine.formatWeight(group.groupTotalKg)} كجم",
+                    text = CalculationEngine.formatWeight(group.groupTotalKg),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     color = EmeraldPrimary

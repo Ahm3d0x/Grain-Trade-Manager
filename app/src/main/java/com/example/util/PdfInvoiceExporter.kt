@@ -33,23 +33,24 @@ import java.util.Locale
 
 /**
  * ERP-Grade Tabular PDF Invoice Generator:
- * 1. Top Merchant / Office ERP Header Box
- * 2. Customer & Invoice Metadata Header Table
- * 3. Per-Section Tabular Grid of 5-Weight Columns (drawn as vertical columns side-by-side from right to left,
- *    each with 5 rows + a bottom column total row) followed by the Section Pricing Summary Table.
+ * 1. Light, B&W-printer-friendly Merchant / Office ERP Header Box (light mint background + dark text & border).
+ * 2. Customer & Invoice Metadata Header Table.
+ * 3. Per-Section Tabular Grid of 5-Weight Columns:
+ *    - Up to 10 vertical columns side-by-side per row on A4.
+ *    - If a row has fewer than 10 columns, the full table width is distributed equally among them (no empty gap).
+ *    - No repeated "كجم" inside weight cells or column sums; all weights and amounts are whole numbers (no grams or piastres).
  * 4. Atomic Page-Break Protection: A 5-weight column block (or section pricing summary / final summary)
- *    is NEVER split across two pages; if the remaining page height cannot fit the entire block intact,
- *    it moves cleanly to the next page.
+ *    is NEVER split across two pages.
  */
 object PdfInvoiceExporter {
 
     private const val PAGE_WIDTH = 595 // A4 width in points
     private const val PAGE_HEIGHT = 842 // A4 height in points
-    private const val MARGIN_H = 28f
-    private const val TOP_MARGIN = 30f
-    private const val BOTTOM_MARGIN = 44f
+    private const val MARGIN_H = 24f
+    private const val TOP_MARGIN = 28f
+    private const val BOTTOM_MARGIN = 42f
     private const val CONTENT_WIDTH = PAGE_WIDTH - (MARGIN_H * 2)
-    private const val COLUMNS_PER_ROW_BLOCK = 4 // 4 vertical weight columns side-by-side per table block
+    private const val MAX_COLUMNS_PER_ROW_BLOCK = 10 // Up to 10 vertical 5-weight columns side-by-side per row
 
     fun generateInvoicePdfFile(
         context: Context,
@@ -69,21 +70,21 @@ object PdfInvoiceExporter {
         val leftEdge = MARGIN_H
         val maxContentY = PAGE_HEIGHT - BOTTOM_MARGIN
 
-        // Paints
+        // Light, B&W-Print-Friendly Paints (light backgrounds + dark text so B&W printing is crisp and clear)
         val headerBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#1B5E20")
+            color = Color.parseColor("#E8F5E9") // Light sage/mint green — prints very light in B&W
             style = Paint.Style.FILL
         }
         val subHeaderBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#E8F5E9")
+            color = Color.parseColor("#F4FAF5") // Ultra-light green tint
             style = Paint.Style.FILL
         }
         val tableHeaderBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#F3EFE6")
+            color = Color.parseColor("#F5F5F4") // Very light warm gray for table column headers
             style = Paint.Style.FILL
         }
         val totalCellBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#FEF3C7")
+            color = Color.parseColor("#FEF9C3") // Very light pale wheat tint for column sum cells
             style = Paint.Style.FILL
         }
         val whiteFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -91,9 +92,9 @@ object PdfInvoiceExporter {
             style = Paint.Style.FILL
         }
         val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#9CA3AF")
+            color = Color.parseColor("#6B7280")
             style = Paint.Style.STROKE
-            strokeWidth = 1f
+            strokeWidth = 0.9f
         }
         val strongBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#1B5E20")
@@ -101,25 +102,25 @@ object PdfInvoiceExporter {
             strokeWidth = 1.4f
         }
 
-        val whiteTitlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
+        val headerTitlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#111827") // Dark ink for sharp B&W and color printing
             textSize = 17f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             textAlign = Paint.Align.RIGHT
         }
-        val whiteSubPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#E8F5E9")
+        val headerSubPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#1F2937")
             textSize = 10.5f
             textAlign = Paint.Align.RIGHT
         }
-        val whiteLeftBadgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#FEF3C7")
+        val headerLeftBadgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#1B5E20")
             textSize = 13f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             textAlign = Paint.Align.LEFT
         }
         val boldRightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#1C1917")
+            color = Color.parseColor("#111827")
             textSize = 11f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             textAlign = Paint.Align.RIGHT
@@ -130,18 +131,18 @@ object PdfInvoiceExporter {
             textAlign = Paint.Align.RIGHT
         }
         val boldCenterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#1B5E20")
-            textSize = 10.5f
+            color = Color.parseColor("#111827")
+            textSize = 10f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             textAlign = Paint.Align.CENTER
         }
         val cellCenterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#1C1917")
-            textSize = 10f
+            color = Color.parseColor("#111827")
+            textSize = 9.5f
             textAlign = Paint.Align.CENTER
         }
         val footerPageNumPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#6B7280")
+            color = Color.parseColor("#4B5563")
             textSize = 9.5f
             textAlign = Paint.Align.CENTER
         }
@@ -164,12 +165,13 @@ object PdfInvoiceExporter {
             canvas = page.canvas
             currentY = TOP_MARGIN
 
-            // Draw compact continuation header at top of new page
+            // Draw compact light continuation header at top of new page
+            val contTitle = settings.merchantName.ifBlank { "فاتورة شراء حبوب وغلال" }
             val contRect = RectF(leftEdge, currentY, rightEdge, currentY + 26f)
-            canvas.drawRoundRect(contRect, 4f, 4f, subHeaderBgPaint)
-            canvas.drawRoundRect(contRect, 4f, 4f, borderPaint)
+            canvas.drawRoundRect(contRect, 4f, 4f, headerBgPaint)
+            canvas.drawRoundRect(contRect, 4f, 4f, strongBorderPaint)
             canvas.drawText(
-                "${settings.merchantName} — تابع فاتورة شراء رقم #${details.invoice.invoiceNumber} (العميل: ${details.invoice.customerNameSnapshot})",
+                "$contTitle — تابع فاتورة شراء رقم #${details.invoice.invoiceNumber} (العميل: ${details.invoice.customerNameSnapshot})",
                 rightEdge - 10f,
                 currentY + 17f,
                 boldRightPaint
@@ -184,24 +186,35 @@ object PdfInvoiceExporter {
         }
 
         // =========================================================================
-        // 1. ERP HEADER 1: MERCHANT / OFFICE HEADER BOX
+        // 1. ERP HEADER 1: LIGHT, PRINT-FRIENDLY MERCHANT / OFFICE HEADER BOX
         // =========================================================================
         val merchantBoxHeight = 64f
         val merchantRect = RectF(leftEdge, currentY, rightEdge, currentY + merchantBoxHeight)
         canvas.drawRoundRect(merchantRect, 6f, 6f, headerBgPaint)
+        canvas.drawRoundRect(merchantRect, 6f, 6f, strongBorderPaint)
 
-        canvas.drawText(settings.merchantName, rightEdge - 14f, currentY + 24f, whiteTitlePaint)
+        val headerTitle = settings.merchantName.ifBlank { "فاتورة شراء وتوريد حبوب وغلال" }
+        canvas.drawText(headerTitle, rightEdge - 14f, currentY + 24f, headerTitlePaint)
+        val contactParts = buildList {
+            if (settings.merchantPhone.isNotBlank()) add("الهاتف: ${settings.merchantPhone}")
+            if (settings.merchantAddress.isNotBlank()) add("العنوان: ${settings.merchantAddress}")
+        }
+        val contactLine = if (contactParts.isNotEmpty()) {
+            contactParts.joinToString("   |   ")
+        } else {
+            "بيان أوزان ومحاسبة حبوب وغلال"
+        }
         canvas.drawText(
-            "الهاتف: ${settings.merchantPhone}   |   العنوان: ${settings.merchantAddress}",
+            contactLine,
             rightEdge - 14f,
             currentY + 43f,
-            whiteSubPaint
+            headerSubPaint
         )
         canvas.drawText(
-            "مستند رسمي لتوريد ووزن الحبوب والغلال",
+            "مستند رسمي لتوريد ووزن الحبوب والغلال (الأوزان بالكيلوجرام الصافي)",
             rightEdge - 14f,
             currentY + 57f,
-            whiteSubPaint
+            headerSubPaint
         )
 
         val statusAr = if (details.invoice.status == InvoiceStatus.APPROVED.name) "معتمدة" else "مسودة"
@@ -209,15 +222,16 @@ object PdfInvoiceExporter {
             "فاتورة شراء #${details.invoice.invoiceNumber}",
             leftEdge + 14f,
             currentY + 26f,
-            whiteLeftBadgePaint
+            headerLeftBadgePaint
         )
+        headerSubPaint.textAlign = Paint.Align.LEFT
         canvas.drawText(
             "الحالة: $statusAr  |  ${calc.paymentStatus.labelAr}",
             leftEdge + 14f,
             currentY + 46f,
-            whiteSubPaint.apply { textAlign = Paint.Align.LEFT }
+            headerSubPaint
         )
-        whiteSubPaint.textAlign = Paint.Align.RIGHT
+        headerSubPaint.textAlign = Paint.Align.RIGHT
         currentY += merchantBoxHeight + 8f
 
         // =========================================================================
@@ -267,7 +281,7 @@ object PdfInvoiceExporter {
         currentY += custBoxHeight + 12f
 
         // =========================================================================
-        // 3. PER-SECTION ERP TABLES (5-WEIGHT VERTICAL COLUMNS + SECTION SUMMARY)
+        // 3. PER-SECTION ERP TABLES (UP TO 10 VERTICAL COLUMNS PER ROW + EQUAL DISTRIBUTION)
         // =========================================================================
         val colBlockHeaderH = 20f
         val weightRowH = 18f
@@ -315,18 +329,18 @@ object PdfInvoiceExporter {
         canvas.drawRect(finalRect, subHeaderBgPaint)
         canvas.drawRect(finalRect, strongBorderPaint)
 
-        // Header strip inside Final Summary
+        // Light Print-Friendly Header strip inside Final Summary
         val finalHeaderRect = RectF(leftEdge, currentY, rightEdge, currentY + 24f)
         canvas.drawRect(finalHeaderRect, headerBgPaint)
+        canvas.drawRect(finalHeaderRect, strongBorderPaint)
         canvas.drawText(
             "الملخص المالي والمحاسبي النهائي للفاتورة",
             rightEdge - 10f,
             currentY + 16f,
-            whiteSubPaint.apply { typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD) }
+            boldRightPaint
         )
 
-        // 4 Summary columns from Right to Left:
-        // [إجمالي الوزن والشكاير] | [إجمالي قيمة الفاتورة] | [إجمالي المدفوع الصافي] | [المتبقي المستحق]
+        // 4 Summary columns from Right to Left (whole kg and whole currency without piastres):
         val summaryColW = CONTENT_WIDTH / 4f
         val summaryLabels = listOf(
             "إجمالي الوزن (${calc.totalBagCount} شكارة)",
@@ -427,7 +441,7 @@ object PdfInvoiceExporter {
         var y = getCurrentY()
         var c = getCanvas()
 
-        // Section Title Bar
+        // Section Title Bar (Light background, crisp dark text)
         val secBarRect = RectF(leftEdge, y, rightEdge, y + sectionHeaderBarH)
         c.drawRect(secBarRect, subHeaderBgPaint)
         c.drawRect(secBarRect, strongBorderPaint)
@@ -440,14 +454,12 @@ object PdfInvoiceExporter {
         y += sectionHeaderBarH
         setCurrentY(y)
 
-        // Chunk the 5-weight groups into horizontal blocks of COLUMNS_PER_ROW_BLOCK (4 columns per row block)
+        // Chunk the 5-weight groups into horizontal blocks of up to MAX_COLUMNS_PER_ROW_BLOCK (10 columns per row block)
         val groupBlocks: List<List<WeightGroup>> = if (secCalc.groups.isEmpty()) {
             emptyList()
         } else {
-            secCalc.groups.chunked(COLUMNS_PER_ROW_BLOCK)
+            secCalc.groups.chunked(MAX_COLUMNS_PER_ROW_BLOCK)
         }
-
-        val colWidth = CONTENT_WIDTH / COLUMNS_PER_ROW_BLOCK
 
         groupBlocks.forEach { blockGroups ->
             // ATOMIC CHECK: Never split a 5-weight column block across two pages!
@@ -455,19 +467,36 @@ object PdfInvoiceExporter {
             c = getCanvas()
             y = getCurrentY()
 
-            // Draw the 4 column slots from Right to Left
+            // Distribute full CONTENT_WIDTH equally across the columns in this row (1..10 columns)
+            // so there is never an empty gap on the left when there are fewer than 10 columns!
+            val colsInRow = blockGroups.size.coerceAtLeast(1)
+            val colWidth = CONTENT_WIDTH / colsInRow.toFloat()
+
+            // Dynamically adjust font size slightly when many columns (7..10) are side-by-side
+            val originalBoldSize = boldCenterPaint.textSize
+            val originalCellSize = cellCenterPaint.textSize
+            if (colsInRow >= 8) {
+                boldCenterPaint.textSize = 8.5f
+                cellCenterPaint.textSize = 8.5f
+            } else if (colsInRow >= 6) {
+                boldCenterPaint.textSize = 9.2f
+                cellCenterPaint.textSize = 9.0f
+            }
+
+            // Draw the columns in this row from Right to Left
             blockGroups.forEachIndexed { colSlotIndex, group ->
                 val colRight = rightEdge - (colSlotIndex * colWidth)
                 val colLeft = colRight - colWidth
                 val colCenterX = (colLeft + colRight) / 2f
 
-                // 1. Column Header Cell ("العمود X")
+                // 1. Column Header Cell ("العمود X" or "عمود X")
                 val headerCell = RectF(colLeft, y, colRight, y + colBlockHeaderH)
                 c.drawRect(headerCell, tableHeaderBgPaint)
                 c.drawRect(headerCell, borderPaint)
-                c.drawText("العمود ${group.groupIndex}", colCenterX, y + 14f, boldCenterPaint)
+                val colTitle = if (colsInRow <= 6) "العمود ${group.groupIndex}" else "عمود ${group.groupIndex}"
+                c.drawText(colTitle, colCenterX, y + 14f, boldCenterPaint)
 
-                // 2. Five Weight Cells Vertically (Rows 1..5)
+                // 2. Five Weight Cells Vertically (Rows 1..5) — WITHOUT "كجم" or grams
                 for (rowIdx in 0 until CalculationEngine.GROUP_SIZE) {
                     val rowTop = y + colBlockHeaderH + (rowIdx * weightRowH)
                     val rowBottom = rowTop + weightRowH
@@ -477,32 +506,45 @@ object PdfInvoiceExporter {
 
                     val weightItem = group.weights.getOrNull(rowIdx)
                     if (weightItem != null) {
-                        val txt = "(${weightItem.sequenceNumber})  ${CalculationEngine.formatWeight(weightItem.weightKg)} كجم"
+                        val txt = if (colsInRow <= 7) {
+                            "(${weightItem.sequenceNumber}) ${CalculationEngine.formatWeight(weightItem.weightKg)}"
+                        } else {
+                            CalculationEngine.formatWeight(weightItem.weightKg)
+                        }
                         c.drawText(txt, colCenterX, rowTop + 13f, cellCenterPaint)
                     } else {
                         c.drawText("—", colCenterX, rowTop + 13f, cellCenterPaint)
                     }
                 }
 
-                // 3. Column Total Footer Cell ("مجموع العمود")
+                // 3. Column Total Footer Cell — WITHOUT "كجم" or grams
                 val sumTop = y + colBlockHeaderH + (5 * weightRowH)
                 val sumBottom = sumTop + colSumFooterH
                 val sumRect = RectF(colLeft, sumTop, colRight, sumBottom)
                 c.drawRect(sumRect, totalCellBgPaint)
                 c.drawRect(sumRect, strongBorderPaint)
+                val sumText = if (colsInRow <= 5) {
+                    "المجموع: ${CalculationEngine.formatWeight(group.groupTotalKg)}"
+                } else {
+                    CalculationEngine.formatWeight(group.groupTotalKg)
+                }
                 c.drawText(
-                    "المجموع: ${CalculationEngine.formatWeight(group.groupTotalKg)} كجم",
+                    sumText,
                     colCenterX,
                     sumTop + 15f,
                     boldCenterPaint
                 )
             }
 
+            // Restore standard paint sizes for section summary table
+            boldCenterPaint.textSize = originalBoldSize
+            cellCenterPaint.textSize = originalCellSize
+
             y += singleColumnBlockHeight
             setCurrentY(y)
         }
 
-        // Section Pricing & Totals Table Row (Atomic check so it stays intact)
+        // Section Pricing & Totals Table Row (Atomic check so it stays intact, whole numbers without piastres)
         ensureAtomicBlockFits(sectionPricingTableH + 10f)
         c = getCanvas()
         y = getCurrentY()
@@ -517,13 +559,13 @@ object PdfInvoiceExporter {
         val secHeaders = listOf(
             "عدد شكاير القسم ${sec.sectionOrder}",
             "إجمالي وزن القسم",
-            "سعر الكيلو (${sec.unitNameSnapshot})",
+            "سعر الوحدة (${sec.unitNameSnapshot})",
             "إجمالي قيمة القسم ${sec.sectionOrder}"
         )
         val secVals = listOf(
             "${secCalc.bagCount} شكارة",
             "${CalculationEngine.formatWeight(secCalc.totalWeightKg)} كجم",
-            "${CalculationEngine.formatNumber(secCalc.pricePerKg, 3)} $currencySymbol",
+            CalculationEngine.formatCurrency(sec.unitPrice, currencySymbol),
             CalculationEngine.formatCurrency(secCalc.sectionTotalAmount, currencySymbol)
         )
 

@@ -97,7 +97,7 @@ fun AddOrEditSectionDialog(
         )
     }
     var priceText by remember {
-        mutableStateOf(existingSection?.unitPrice?.toString() ?: "4000")
+        mutableStateOf(existingSection?.unitPrice?.let { CalculationEngine.formatPlainInt(it) } ?: "4000")
     }
     var auditReason by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf<String?>(null) }
@@ -170,14 +170,13 @@ fun AddOrEditSectionDialog(
                 )
 
                 val previewPrice = priceText.toDoubleOrNull() ?: 0.0
-                val previewKgPrice = if (selectedUnit.weightKg > 0) previewPrice / selectedUnit.weightKg else 0.0
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = EmeraldLight,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "سعر الكيلو: ${CalculationEngine.formatNumber(previewKgPrice, 3)} $currencySymbol / كجم",
+                        text = "التسعير: ${CalculationEngine.formatCurrency(previewPrice, currencySymbol)} لكل ${selectedUnit.name} (${CalculationEngine.formatWeight(selectedUnit.weightKg)} كجم)",
                         style = MaterialTheme.typography.bodyMedium,
                         color = EmeraldPrimary,
                         fontWeight = FontWeight.Bold,
@@ -261,7 +260,7 @@ fun EditOrDeleteWeightDialog(
     onUpdateWeight: (Double, String?) -> Unit,
     onDeleteWeight: (String?) -> Unit
 ) {
-    var weightText by remember { mutableStateOf(weight.weightKg.toString()) }
+    var weightText by remember { mutableStateOf(CalculationEngine.formatPlainInt(weight.weightKg)) }
     var auditReason by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf<String?>(null) }
 
@@ -557,7 +556,7 @@ fun RecordPaymentDialog(
     onRecordPayment: (Double, String, String) -> Unit
 ) {
     var amountText by remember {
-        mutableStateOf(if (remainingAmount > 0) remainingAmount.toString() else "")
+        mutableStateOf(if (remainingAmount > 0) CalculationEngine.formatPlainInt(remainingAmount) else "")
     }
     var method by remember { mutableStateOf("نقدي") }
     var notes by remember { mutableStateOf("") }

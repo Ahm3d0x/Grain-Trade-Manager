@@ -2,7 +2,6 @@ package com.example.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -10,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -24,7 +24,10 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -46,10 +49,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.example.data.local.AppSettingsEntity
 import com.example.data.local.CustomerEntity
 import com.example.domain.CalculationEngine
 import com.example.ui.theme.EmeraldLight
@@ -57,9 +63,12 @@ import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.StatusPaidGreen
 import com.example.ui.theme.StatusSettlementBg
 import com.example.ui.theme.StatusSettlementPurple
+import com.example.ui.theme.StatusUnpaidBg
 import com.example.ui.theme.StatusUnpaidRed
 import com.example.ui.theme.WheatCardBorder
+import com.example.ui.theme.WheatGold
 import com.example.ui.viewmodel.InvoiceWithCalc
+import com.example.util.PdfInvoiceExporter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -68,17 +77,21 @@ import java.util.Locale
 fun CustomersScreen(
     customers: List<CustomerEntity>,
     invoices: List<InvoiceWithCalc>,
-    currencySymbol: String,
+    settings: AppSettingsEntity,
     onSaveCustomer: (CustomerEntity) -> Unit,
     onDeleteCustomer: (CustomerEntity) -> Unit,
     onStartPurchaseForCustomer: (CustomerEntity) -> Unit,
     onOpenInvoice: (Long) -> Unit,
     onDeleteInvoice: (Long) -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val currencySymbol = settings.currencySymbol
     var searchQuery by remember { mutableStateOf("") }
     var editingCustomer by remember { mutableStateOf<CustomerEntity?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
     var historyCustomer by remember { mutableStateOf<CustomerEntity?>(null) }
+    var customerToDelete by remember { mutableStateOf<CustomerEntity?>(null) }
+    var invoiceToDeleteInHistory by remember { mutableStateOf<InvoiceWithCalc?>(null) }
 
     val filteredCustomers = remember(customers, searchQuery) {
         if (searchQuery.isBlank()) customers
@@ -266,7 +279,7 @@ fun CustomersScreen(
                             ) {
                                 Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("سجل المشتريات", style = MaterialTheme.typography.labelMedium)
+                                Text("سجل المشتريات (${customerInvoices.size})", style = MaterialTheme.typography.labelMedium)
                             }
                         }
 
@@ -274,7 +287,10 @@ fun CustomersScreen(
                             IconButton(onClick = { editingCustomer = cust }) {
                                 Icon(Icons.Default.Edit, contentDescription = "تعديل العميل", tint = EmeraldPrimary)
                             }
-                            IconButton(onClick = { onDeleteCustomer(cust) }) {
+                            IconButton(
+                                onClick = { customerToDelete = cust },
+                                modifier = Modifier.testTag("delete_customer_${cust.id}")
+                            ) {
                                 Icon(Icons.Default.Delete, contentDescription = "حذف العميل", tint = StatusUnpaidRed)
                             }
                         }
@@ -284,6 +300,7 @@ fun CustomersScreen(
         }
     }
 
+    // Add / Edit Customer Form Dialog
     if (showAddDialog || editingCustomer != null) {
         CustomerFormDialog(
             initialCustomer = editingCustomer,
@@ -299,91 +316,289 @@ fun CustomersScreen(
         )
     }
 
-    historyCustomer?.let { cust ->
-        val custInvoices = invoices.filter { it.details.invoice.customerId == cust.id }
-        val dateFormat = remember { SimpleDateFormat("yyyy/MM/dd - hh:mm a", Locale("ar", "EG")) }
-
+    // Customer Deletion Confirmation Dialog
+    customerToDelete?.let { cust ->
+        val linkedCount = invoices.count { it.details.invoice.customerId == cust.id }
         AlertDialog(
-            onDismissRequest = { historyCustomer = null },
+            onDismissRequest = { customerToDelete = null },
             title = {
                 Text(
-                    text = "سجل مشتريات العميل: ${cust.name}",
-                    style = MaterialTheme.typography.titleMedium,
+                    text = "تأكيد حذف العميل: ${cust.name}",
                     fontWeight = FontWeight.Bold
                 )
             },
             text = {
-                if (custInvoices.isEmpty()) {
-                    Text("لا توجد فواتير مسجلة لهذا العميل حتى الآن.")
+                if (linkedCount > 0) {
+                    Text("هذا العميل مرتبط بـ $linkedCount فاتورة مسجلة. لحذف العميل يجب أولاً حذف فواتيره من سجل المشتريات حفاظًا على دقة الحسابات.")
                 } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 360.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    Text("هل أنت متأكد من حذف بيانات العميل «${cust.name}» نهائيًا؟")
+                }
+            },
+            confirmButton = {
+                if (linkedCount == 0) {
+                    Button(
+                        onClick = {
+                            onDeleteCustomer(cust)
+                            customerToDelete = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = StatusUnpaidRed)
                     ) {
-                        items(custInvoices, key = { it.details.invoice.id }) { item ->
-                            Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = EmeraldLight.copy(alpha = 0.5f),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .clickable {
-                                        historyCustomer = null
-                                        onOpenInvoice(item.details.invoice.id)
-                                    }
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(10.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                        Text("نعم، احذف العميل")
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            val target = cust
+                            customerToDelete = null
+                            historyCustomer = target
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
+                    ) {
+                        Text("عرض فواتير العميل")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { customerToDelete = null }) {
+                    Text("إلغاء")
+                }
+            }
+        )
+    }
+
+    // Full Customer Purchase History Dialog with Complete Actions (Open/Edit, Print, Share WhatsApp/PDF, Delete)
+    historyCustomer?.let { cust ->
+        val custInvoices = invoices.filter { it.details.invoice.customerId == cust.id }
+        val dateFormat = remember { SimpleDateFormat("yyyy/MM/dd - hh:mm a", Locale.forLanguageTag("ar-EG")) }
+
+        Dialog(
+            onDismissRequest = { historyCustomer = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp)
+                    .border(1.dp, WheatCardBorder, RoundedCornerShape(18.dp)),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "سجل فواتير العميل: ${cust.name}",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "إجمالي الفواتير: ${custInvoices.size} عملية",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        TextButton(onClick = { historyCustomer = null }) {
+                            Text("إغلاق")
+                        }
+                    }
+
+                    HorizontalDivider(color = WheatCardBorder)
+
+                    if (custInvoices.isEmpty()) {
+                        Text(
+                            text = "لا توجد فواتير مسجلة لهذا العميل حتى الآن.",
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(vertical = 24.dp)
+                        )
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 460.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(custInvoices, key = { it.details.invoice.id }) { item ->
+                                val inv = item.details.invoice
+                                val calc = item.calc
+                                val prods = calc.productSummaries.joinToString(" ، ") {
+                                    "${it.productName} (${CalculationEngine.formatWeight(it.totalWeightKg)} كجم)"
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = MaterialTheme.colorScheme.background,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .border(1.dp, WheatCardBorder, RoundedCornerShape(14.dp))
                                 ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                                    Column(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        Text(
-                                            text = "فاتورة #${item.details.invoice.invoiceNumber}",
-                                            fontWeight = FontWeight.Bold,
-                                            color = EmeraldPrimary
-                                        )
                                         Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            PaymentStatusBadge(paymentStatus = item.calc.paymentStatus)
-                                            IconButton(
-                                                onClick = { onDeleteInvoice(item.details.invoice.id) },
-                                                modifier = Modifier.size(28.dp)
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Delete,
-                                                    contentDescription = "حذف الفاتورة",
-                                                    tint = StatusUnpaidRed,
-                                                    modifier = Modifier.size(18.dp)
+                                                Surface(shape = RoundedCornerShape(8.dp), color = EmeraldLight) {
+                                                    Text(
+                                                        text = "فاتورة #${inv.invoiceNumber}",
+                                                        style = MaterialTheme.typography.labelLarge,
+                                                        color = EmeraldPrimary,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                                    )
+                                                }
+                                                InvoiceStatusBadge(status = inv.status)
+                                            }
+                                            PaymentStatusBadge(paymentStatus = calc.paymentStatus)
+                                        }
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = dateFormat.format(Date(inv.invoiceDate)),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                Text(
+                                                    text = prods.ifBlank { "بدون أوزان" },
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = EmeraldPrimary,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                            Column(horizontalAlignment = Alignment.End) {
+                                                Text(
+                                                    text = CalculationEngine.formatCurrency(calc.totalInvoiceAmount, currencySymbol),
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = EmeraldPrimary
+                                                )
+                                                Text(
+                                                    text = "${calc.totalBagCount} شكارة • المتبقي: ${CalculationEngine.formatNumber(calc.remainingAmount)}",
+                                                    style = MaterialTheme.typography.bodySmall
                                                 )
                                             }
                                         }
+
+                                        HorizontalDivider(color = WheatCardBorder)
+
+                                        // Direct Actions for each Invoice in Customer History:
+                                        // Open & Edit | WhatsApp Share | PDF | Print | Delete
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Button(
+                                                onClick = {
+                                                    historyCustomer = null
+                                                    onOpenInvoice(inv.id)
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                                                modifier = Modifier.weight(1.2f).height(38.dp),
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("فتح وتعديل", style = MaterialTheme.typography.labelMedium, softWrap = false, maxLines = 1)
+                                            }
+
+                                            OutlinedButton(
+                                                onClick = {
+                                                    PdfInvoiceExporter.shareInvoicePdf(
+                                                        context = context,
+                                                        details = item.details,
+                                                        settings = settings,
+                                                        whatsAppOnly = true
+                                                    )
+                                                },
+                                                modifier = Modifier.weight(1f).height(38.dp),
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Icon(Icons.Default.Share, contentDescription = null, tint = EmeraldPrimary, modifier = Modifier.size(14.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("إرسال", style = MaterialTheme.typography.labelMedium, softWrap = false, maxLines = 1)
+                                            }
+
+                                            OutlinedButton(
+                                                onClick = {
+                                                    PdfInvoiceExporter.printInvoicePdf(
+                                                        context = context,
+                                                        details = item.details,
+                                                        settings = settings
+                                                    )
+                                                },
+                                                modifier = Modifier.weight(1f).height(38.dp),
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Icon(Icons.Default.Print, contentDescription = null, tint = WheatGold, modifier = Modifier.size(14.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("طباعة", style = MaterialTheme.typography.labelMedium, softWrap = false, maxLines = 1)
+                                            }
+
+                                            OutlinedButton(
+                                                onClick = { invoiceToDeleteInHistory = item },
+                                                colors = ButtonDefaults.outlinedButtonColors(
+                                                    containerColor = StatusUnpaidBg.copy(alpha = 0.3f),
+                                                    contentColor = StatusUnpaidRed
+                                                ),
+                                                modifier = Modifier.height(38.dp),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                            ) {
+                                                Icon(Icons.Default.Delete, contentDescription = "حذف الفاتورة", modifier = Modifier.size(15.dp))
+                                            }
+                                        }
                                     }
-                                    Text(
-                                        text = dateFormat.format(Date(item.details.invoice.invoiceDate)),
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                    Text(
-                                        text = "الوزن: ${CalculationEngine.formatWeight(item.calc.totalWeightKg)} كجم (${item.calc.totalBagCount} شكارة) — الإجمالي: ${CalculationEngine.formatCurrency(item.calc.totalInvoiceAmount, currencySymbol)}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = FontWeight.Bold
-                                    )
                                 }
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // Confirmation dialog when deleting an invoice from inside the Customer's History
+    invoiceToDeleteInHistory?.let { target ->
+        AlertDialog(
+            onDismissRequest = { invoiceToDeleteInHistory = null },
+            title = {
+                Text(
+                    text = "تأكيد حذف الفاتورة #${target.details.invoice.invoiceNumber}",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text("هل أنت متأكد من حذف هذه الفاتورة من سجل العميل؟")
             },
             confirmButton = {
-                TextButton(onClick = { historyCustomer = null }) {
-                    Text("إغلاق")
+                Button(
+                    onClick = {
+                        onDeleteInvoice(target.details.invoice.id)
+                        invoiceToDeleteInHistory = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = StatusUnpaidRed)
+                ) {
+                    Text("نعم، احذف الفاتورة")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { invoiceToDeleteInHistory = null }) {
+                    Text("إلغاء")
                 }
             }
         )

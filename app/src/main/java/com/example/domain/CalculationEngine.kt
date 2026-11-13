@@ -67,7 +67,7 @@ object CalculationEngine {
         val groups = sorted.chunked(GROUP_SIZE).mapIndexed { index, chunk ->
             val groupSum = chunk.fold(BigDecimal.ZERO) { acc, item ->
                 acc.add(BigDecimal.valueOf(item.weightKg))
-            }.setScale(3, RoundingMode.HALF_UP).toDouble()
+            }.setScale(0, RoundingMode.HALF_UP).toDouble()
 
             WeightGroup(
                 groupIndex = index + 1,
@@ -79,7 +79,7 @@ object CalculationEngine {
 
         val totalWeightBd = groups.fold(BigDecimal.ZERO) { acc, group ->
             acc.add(BigDecimal.valueOf(group.groupTotalKg))
-        }.setScale(3, RoundingMode.HALF_UP)
+        }.setScale(0, RoundingMode.HALF_UP)
 
         val unitWeightBd = if (section.unitWeightSnapshot > 0.0) {
             BigDecimal.valueOf(section.unitWeightSnapshot)
@@ -89,11 +89,11 @@ object CalculationEngine {
         val unitPriceBd = BigDecimal.valueOf(section.unitPrice)
 
         // Price per kg = P_unit / W_unit
-        val pricePerKgBd = unitPriceBd.divide(unitWeightBd, 6, RoundingMode.HALF_UP)
+        val pricePerKgBd = unitPriceBd.divide(unitWeightBd, 4, RoundingMode.HALF_UP)
 
-        // Total section value = W_section * P_unit / W_unit
+        // Total section value = W_section * P_unit / W_unit (whole currency units, no piastres)
         val sectionTotalBd = totalWeightBd.multiply(unitPriceBd)
-            .divide(unitWeightBd, 2, RoundingMode.HALF_UP)
+            .divide(unitWeightBd, 0, RoundingMode.HALF_UP)
 
         return SectionCalculation(
             section = section,
@@ -101,7 +101,7 @@ object CalculationEngine {
             groups = groups,
             bagCount = sorted.size,
             totalWeightKg = totalWeightBd.toDouble(),
-            pricePerKg = pricePerKgBd.setScale(4, RoundingMode.HALF_UP).toDouble(),
+            pricePerKg = pricePerKgBd.toDouble(),
             sectionTotalAmount = sectionTotalBd.toDouble()
         )
     }
@@ -117,11 +117,11 @@ object CalculationEngine {
         val totalBags = sectionCalcs.sumOf { it.bagCount }
         val totalWeightBd = sectionCalcs.fold(BigDecimal.ZERO) { acc, sec ->
             acc.add(BigDecimal.valueOf(sec.totalWeightKg))
-        }.setScale(3, RoundingMode.HALF_UP)
+        }.setScale(0, RoundingMode.HALF_UP)
 
         val totalInvoiceBd = sectionCalcs.fold(BigDecimal.ZERO) { acc, sec ->
             acc.add(BigDecimal.valueOf(sec.sectionTotalAmount))
-        }.setScale(2, RoundingMode.HALF_UP)
+        }.setScale(0, RoundingMode.HALF_UP)
 
         val productSummaries = sectionCalcs
             .groupBy { it.section.productNameSnapshot }
@@ -131,10 +131,10 @@ object CalculationEngine {
                     bagCount = secs.sumOf { it.bagCount },
                     totalWeightKg = secs.fold(BigDecimal.ZERO) { acc, s ->
                         acc.add(BigDecimal.valueOf(s.totalWeightKg))
-                    }.setScale(3, RoundingMode.HALF_UP).toDouble(),
+                    }.setScale(0, RoundingMode.HALF_UP).toDouble(),
                     totalAmount = secs.fold(BigDecimal.ZERO) { acc, s ->
                         acc.add(BigDecimal.valueOf(s.sectionTotalAmount))
-                    }.setScale(2, RoundingMode.HALF_UP).toDouble()
+                    }.setScale(0, RoundingMode.HALF_UP).toDouble()
                 )
             }
 
@@ -171,19 +171,19 @@ object CalculationEngine {
             }
         }
 
-        // Net amount currently applied to this invoice
+        // Net amount currently applied to this invoice (whole currency units, no piastres)
         val netPaidBd = grossPaidBd.subtract(refundedBd).subtract(creditedBd)
-            .setScale(2, RoundingMode.HALF_UP)
+            .setScale(0, RoundingMode.HALF_UP)
 
-        val diffBd = totalInvoiceBd.subtract(netPaidBd).setScale(2, RoundingMode.HALF_UP)
+        val diffBd = totalInvoiceBd.subtract(netPaidBd).setScale(0, RoundingMode.HALF_UP)
 
         val remainingBd = if (diffBd > BigDecimal.ZERO) diffBd else BigDecimal.ZERO
         val overpaidBd = if (diffBd < BigDecimal.ZERO) diffBd.abs() else BigDecimal.ZERO
 
         val status = when {
-            overpaidBd > BigDecimal("0.01") -> PaymentStatus.OVERPAID_NEEDS_SETTLEMENT
-            totalInvoiceBd > BigDecimal.ZERO && remainingBd <= BigDecimal("0.01") -> PaymentStatus.PAID
-            netPaidBd > BigDecimal("0.01") -> PaymentStatus.PARTIAL
+            overpaidBd >= BigDecimal.ONE -> PaymentStatus.OVERPAID_NEEDS_SETTLEMENT
+            totalInvoiceBd > BigDecimal.ZERO && remainingBd == BigDecimal.ZERO -> PaymentStatus.PAID
+            netPaidBd > BigDecimal.ZERO -> PaymentStatus.PARTIAL
             else -> PaymentStatus.UNPAID
         }
 
@@ -194,9 +194,9 @@ object CalculationEngine {
             totalBagCount = totalBags,
             totalWeightKg = totalWeightBd.toDouble(),
             totalInvoiceAmount = totalInvoiceBd.toDouble(),
-            grossPaidAmount = grossPaidBd.setScale(2, RoundingMode.HALF_UP).toDouble(),
-            refundedAmount = refundedBd.setScale(2, RoundingMode.HALF_UP).toDouble(),
-            creditTransferredAmount = creditedBd.setScale(2, RoundingMode.HALF_UP).toDouble(),
+            grossPaidAmount = grossPaidBd.setScale(0, RoundingMode.HALF_UP).toDouble(),
+            refundedAmount = refundedBd.setScale(0, RoundingMode.HALF_UP).toDouble(),
+            creditTransferredAmount = creditedBd.setScale(0, RoundingMode.HALF_UP).toDouble(),
             netPaidAmount = netPaidBd.toDouble(),
             remainingAmount = remainingBd.toDouble(),
             overpaidAmount = overpaidBd.toDouble(),
@@ -204,17 +204,26 @@ object CalculationEngine {
         )
     }
 
-    fun formatNumber(value: Double, maxDecimals: Int = 2): String {
+    fun formatNumber(value: Double, maxDecimals: Int = 0): String {
         val symbols = DecimalFormatSymbols(Locale.US)
+        val rounded = if (maxDecimals <= 0) {
+            BigDecimal.valueOf(value).setScale(0, RoundingMode.HALF_UP).toDouble()
+        } else {
+            BigDecimal.valueOf(value).setScale(maxDecimals, RoundingMode.HALF_UP).toDouble()
+        }
         val pattern = if (maxDecimals <= 0) "#,##0" else "#,##0." + "#".repeat(maxDecimals)
-        return DecimalFormat(pattern, symbols).format(value)
+        return DecimalFormat(pattern, symbols).format(rounded)
+    }
+
+    fun formatPlainInt(value: Double): String {
+        return BigDecimal.valueOf(value).setScale(0, RoundingMode.HALF_UP).toLong().toString()
     }
 
     fun formatWeight(weightKg: Double): String {
-        return formatNumber(weightKg, 2)
+        return formatNumber(weightKg, 0)
     }
 
     fun formatCurrency(amount: Double, symbol: String = "ج.م"): String {
-        return "${formatNumber(amount, 2)} $symbol"
+        return "${formatNumber(amount, 0)} $symbol"
     }
 }

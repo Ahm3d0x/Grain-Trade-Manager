@@ -149,7 +149,7 @@ fun DashboardScreen(
                                     color = WheatGoldLight
                                 )
                                 Text(
-                                    text = settings.merchantName,
+                                    text = settings.merchantName.ifBlank { "إدارة تجارة الحبوب والغلال" },
                                     style = MaterialTheme.typography.titleLarge,
                                     color = Color.White,
                                     maxLines = 1,

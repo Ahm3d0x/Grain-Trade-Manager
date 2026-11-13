@@ -182,12 +182,12 @@ data class AuditLogEntity(
 @Entity(tableName = "app_settings")
 data class AppSettingsEntity(
     @PrimaryKey val id: Int = 1,
-    val merchantName: String = "شونة ومضرب البركة لتجارة الحبوب والغلال",
-    val merchantPhone: String = "01001234567",
-    val merchantAddress: String = "المنصورة - طريق المحلة الزراعي",
+    val merchantName: String = "",
+    val merchantPhone: String = "",
+    val merchantAddress: String = "",
     val currencySymbol: String = "ج.م",
-    val startingInvoiceNumber: Int = 1025,
-    val invoiceFooterNotes: String = "جميع الأوزان صافية بالكيلوجرام دون خصم فارغ الشكارة"
+    val startingInvoiceNumber: Int = 1001,
+    val invoiceFooterNotes: String = ""
 )
 
 data class SectionWithWeights(

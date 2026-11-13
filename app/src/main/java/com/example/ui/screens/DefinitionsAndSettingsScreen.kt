@@ -344,7 +344,8 @@ fun DefinitionsAndSettingsScreen(
                                 OutlinedTextField(
                                     value = merchantName,
                                     onValueChange = { merchantName = it },
-                                    label = { Text("اسم الشركة أو التاجر (يظهر في ترويسة PDF)") },
+                                    label = { Text("اسم المكتب أو التاجر (يظهر في ترويسة PDF)") },
+                                    placeholder = { Text("اكتب اسم المكتب أو التاجر هنا...") },
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth()
                                 )
@@ -352,7 +353,8 @@ fun DefinitionsAndSettingsScreen(
                                 OutlinedTextField(
                                     value = merchantPhone,
                                     onValueChange = { merchantPhone = it },
-                                    label = { Text("رقم هاتف التاجر") },
+                                    label = { Text("رقم هاتف المكتب / التاجر") },
+                                    placeholder = { Text("اكتب رقم الهاتف هنا...") },
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth()
                                 )
@@ -360,7 +362,8 @@ fun DefinitionsAndSettingsScreen(
                                 OutlinedTextField(
                                     value = merchantAddress,
                                     onValueChange = { merchantAddress = it },
-                                    label = { Text("عنوان الشونة / المضرب") },
+                                    label = { Text("العنوان / المكان") },
+                                    placeholder = { Text("اكتب عنوان المكتب أو الشونة هنا...") },
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth()
                                 )
@@ -386,7 +389,8 @@ fun DefinitionsAndSettingsScreen(
                                 OutlinedTextField(
                                     value = footerNotes,
                                     onValueChange = { footerNotes = it },
-                                    label = { Text("ملاحظات أسفل الفاتورة المطبوعة") },
+                                    label = { Text("ملاحظات أسفل الفاتورة المطبوعة (اختياري)") },
+                                    placeholder = { Text("اكتب أي ملاحظات تود ظهورها أسفل الفاتورة...") },
                                     modifier = Modifier.fillMaxWidth()
                                 )
 
