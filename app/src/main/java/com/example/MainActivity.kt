@@ -245,7 +245,8 @@ fun GrainTradeManagerApp(
                                     activeInvoice?.details?.invoice?.id?.let { id ->
                                         viewModel.settleOverpaidInvoice(id, overpaid, asCredit, notes)
                                     }
-                                }
+                                },
+                                onDeleteInvoice = viewModel::deleteInvoiceById
                             )
                         }
 
@@ -271,7 +272,8 @@ fun GrainTradeManagerApp(
                                 onStartPurchaseForCustomer = { cust ->
                                     viewModel.startNewPurchase(customer = cust)
                                 },
-                                onOpenInvoice = viewModel::openExistingInvoiceInWorkspace
+                                onOpenInvoice = viewModel::openExistingInvoiceInWorkspace,
+                                onDeleteInvoice = viewModel::deleteInvoiceById
                             )
                         }
 

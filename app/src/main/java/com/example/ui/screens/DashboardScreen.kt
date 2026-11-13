@@ -639,7 +639,9 @@ fun InvoiceStatusBadge(status: String) {
             Text(
                 text = if (isApproved) "معتمدة" else "مسودة",
                 style = MaterialTheme.typography.labelMedium,
-                color = if (isApproved) EmeraldPrimary else WheatGold
+                color = if (isApproved) EmeraldPrimary else WheatGold,
+                softWrap = false,
+                maxLines = 1
             )
         }
     }
@@ -661,6 +663,8 @@ fun PaymentStatusBadge(paymentStatus: PaymentStatus) {
             text = paymentStatus.labelAr,
             style = MaterialTheme.typography.labelMedium,
             color = fg,
+            softWrap = false,
+            maxLines = 1,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
         )
     }

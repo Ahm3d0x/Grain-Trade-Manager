@@ -72,7 +72,8 @@ fun CustomersScreen(
     onSaveCustomer: (CustomerEntity) -> Unit,
     onDeleteCustomer: (CustomerEntity) -> Unit,
     onStartPurchaseForCustomer: (CustomerEntity) -> Unit,
-    onOpenInvoice: (Long) -> Unit
+    onOpenInvoice: (Long) -> Unit,
+    onDeleteInvoice: (Long) -> Unit = {}
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var editingCustomer by remember { mutableStateOf<CustomerEntity?>(null) }
@@ -339,14 +340,31 @@ fun CustomersScreen(
                                 ) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
                                             text = "فاتورة #${item.details.invoice.invoiceNumber}",
                                             fontWeight = FontWeight.Bold,
                                             color = EmeraldPrimary
                                         )
-                                        PaymentStatusBadge(paymentStatus = item.calc.paymentStatus)
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            PaymentStatusBadge(paymentStatus = item.calc.paymentStatus)
+                                            IconButton(
+                                                onClick = { onDeleteInvoice(item.details.invoice.id) },
+                                                modifier = Modifier.size(28.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Delete,
+                                                    contentDescription = "حذف الفاتورة",
+                                                    tint = StatusUnpaidRed,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        }
                                     }
                                     Text(
                                         text = dateFormat.format(Date(item.details.invoice.invoiceDate)),

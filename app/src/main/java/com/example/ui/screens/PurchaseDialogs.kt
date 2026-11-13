@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -107,15 +106,15 @@ fun AddOrEditSectionDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = if (isEdit) "تعديل إعدادات القسم ${existingSection?.sectionOrder ?: ""}" else "إضافة فاصل / قسم جديد",
+                text = if (isEdit) "إعدادات وتسعير القسم ${existingSection?.sectionOrder ?: ""}" else "إضافة قسم جديد",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = "1. اختر نوع الحبوب للقسم:",
+                    text = "نوع الحبوب:",
                     style = MaterialTheme.typography.labelLarge
                 )
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -128,7 +127,7 @@ fun AddOrEditSectionDialog(
                                     selectedUnit = linked
                                 }
                             },
-                            label = { Text(prod.name) },
+                            label = { Text(prod.name, softWrap = false, maxLines = 1) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = EmeraldPrimary,
                                 selectedLabelColor = Color.White
@@ -138,7 +137,7 @@ fun AddOrEditSectionDialog(
                 }
 
                 Text(
-                    text = "2. اختر وحدة التسعير (الميزان المحاسبي):",
+                    text = "وحدة التسعير:",
                     style = MaterialTheme.typography.labelLarge
                 )
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -147,7 +146,11 @@ fun AddOrEditSectionDialog(
                             selected = selectedUnit.id == unit.id,
                             onClick = { selectedUnit = unit },
                             label = {
-                                Text("${unit.name} (${CalculationEngine.formatWeight(unit.weightKg)} كجم)")
+                                Text(
+                                    text = "${unit.name} (${CalculationEngine.formatWeight(unit.weightKg)} كجم)",
+                                    softWrap = false,
+                                    maxLines = 1
+                                )
                             },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = WheatGold,
@@ -174,7 +177,7 @@ fun AddOrEditSectionDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "سعر الكيلو المحسوب تلقائيًا: ${CalculationEngine.formatNumber(previewKgPrice, 3)} $currencySymbol / كجم",
+                        text = "سعر الكيلو: ${CalculationEngine.formatNumber(previewKgPrice, 3)} $currencySymbol / كجم",
                         style = MaterialTheme.typography.bodyMedium,
                         color = EmeraldPrimary,
                         fontWeight = FontWeight.Bold,
@@ -185,9 +188,10 @@ fun AddOrEditSectionDialog(
                 if (isApprovedInvoice) {
                     OutlinedTextField(
                         value = auditReason,
-                        onValueChange = { auditReason = it; errorMsg = null },
-                        label = { Text("سبب التعديل (إلزامي للفواتير المعتمدة)") },
-                        placeholder = { Text("مثال: تعديل سعر الاتفاق أو فرز مختلف") },
+                        onValueChange = { auditReason = it },
+                        label = { Text("سبب التعديل (اختياري)") },
+                        placeholder = { Text("يمكن تركه فارغًا") },
+                        singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("section_audit_reason_input")
                     )
                 }
@@ -204,11 +208,10 @@ fun AddOrEditSectionDialog(
                     HorizontalDivider()
                     OutlinedButton(
                         onClick = {
-                            if (isApprovedInvoice && auditReason.isBlank()) {
-                                errorMsg = "يرجى كتابة سبب حذف القسم لأن الفاتورة معتمدة"
-                                return@OutlinedButton
-                            }
-                            onDeleteSection(auditReason.ifBlank { null })
+                            val reason = if (isApprovedInvoice) {
+                                auditReason.ifBlank { "حذف قسم" }
+                            } else null
+                            onDeleteSection(reason)
                             onDismiss()
                         },
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = StatusUnpaidRed),
@@ -216,7 +219,7 @@ fun AddOrEditSectionDialog(
                     ) {
                         Icon(Icons.Default.Delete, contentDescription = null)
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("حذف هذا القسم بالكامل")
+                        Text("حذف هذا القسم")
                     }
                 }
             }
@@ -226,20 +229,19 @@ fun AddOrEditSectionDialog(
                 onClick = {
                     val price = priceText.toDoubleOrNull()
                     if (price == null || price <= 0.0) {
-                        errorMsg = "يرجى إدخال سعر وحدة صحيح أكبر من صفر"
+                        errorMsg = "يرجى إدخال سعر صحيح أكبر من صفر"
                         return@Button
                     }
-                    if (isApprovedInvoice && auditReason.isBlank()) {
-                        errorMsg = "الفاتورة معتمدة — يجب إدخال سبب التعديل لحفظه في سجل التعديلات"
-                        return@Button
-                    }
-                    onConfirm(selectedProduct, selectedUnit, price, auditReason.ifBlank { null })
+                    val reason = if (isApprovedInvoice) {
+                        auditReason.ifBlank { "تعديل إعدادات القسم" }
+                    } else null
+                    onConfirm(selectedProduct, selectedUnit, price, reason)
                     onDismiss()
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
                 modifier = Modifier.testTag("confirm_section_dialog_button")
             ) {
-                Text(if (isEdit) "حفظ التعديلات" else "إنشاء القسم والبدء")
+                Text(if (isEdit) "حفظ" else "إضافة القسم")
             }
         },
         dismissButton = {
@@ -267,13 +269,13 @@ fun EditOrDeleteWeightDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "تعديل أو حذف شكارة #${weight.sequenceNumber} (القسم $sectionOrder)",
+                text = "شكارة #${weight.sequenceNumber} (القسم $sectionOrder)",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = weightText,
                     onValueChange = { weightText = it; errorMsg = null },
@@ -286,9 +288,10 @@ fun EditOrDeleteWeightDialog(
                 if (isApprovedInvoice) {
                     OutlinedTextField(
                         value = auditReason,
-                        onValueChange = { auditReason = it; errorMsg = null },
-                        label = { Text("سبب التعديل أو الحذف (إلزامي)") },
-                        placeholder = { Text("مثال: تصحيح قراءة الميزان") },
+                        onValueChange = { auditReason = it },
+                        label = { Text("سبب التعديل أو الحذف (اختياري)") },
+                        placeholder = { Text("يمكن تركه فارغًا") },
+                        singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("weight_audit_reason_input")
                     )
                 }
@@ -299,11 +302,10 @@ fun EditOrDeleteWeightDialog(
 
                 OutlinedButton(
                     onClick = {
-                        if (isApprovedInvoice && auditReason.isBlank()) {
-                            errorMsg = "يرجى إدخال سبب الحذف لتسجيله في سجل التعديلات"
-                            return@OutlinedButton
-                        }
-                        onDeleteWeight(auditReason.ifBlank { null })
+                        val reason = if (isApprovedInvoice) {
+                            auditReason.ifBlank { "حذف وزن" }
+                        } else null
+                        onDeleteWeight(reason)
                         onDismiss()
                     },
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = StatusUnpaidRed),
@@ -311,7 +313,7 @@ fun EditOrDeleteWeightDialog(
                 ) {
                     Icon(Icons.Default.Delete, contentDescription = null)
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("حذف الشكارة #${weight.sequenceNumber} وإعادة ترتيب القسم")
+                    Text("حذف الشكارة #${weight.sequenceNumber}")
                 }
             }
         },
@@ -323,11 +325,10 @@ fun EditOrDeleteWeightDialog(
                         errorMsg = "يرجى إدخال وزن صحيح أكبر من صفر"
                         return@Button
                     }
-                    if (isApprovedInvoice && auditReason.isBlank()) {
-                        errorMsg = "يرجى إدخال سبب التعديل لتسجيله في سجل التعديلات"
-                        return@Button
-                    }
-                    onUpdateWeight(newW, auditReason.ifBlank { null })
+                    val reason = if (isApprovedInvoice) {
+                        auditReason.ifBlank { "تعديل وزن" }
+                    } else null
+                    onUpdateWeight(newW, reason)
                     onDismiss()
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
@@ -363,7 +364,6 @@ fun CustomerPickerDialog(
     var showNewCustomerForm by remember { mutableStateOf(false) }
     var newCustName by remember { mutableStateOf("") }
     var newCustPhone by remember { mutableStateOf("") }
-    var errorMsg by remember { mutableStateOf<String?>(null) }
 
     val filtered = remember(customers, searchQuery) {
         if (searchQuery.isBlank()) customers
@@ -414,7 +414,7 @@ fun CustomerPickerDialog(
                                 Icon(Icons.Default.Person, contentDescription = null, tint = EmeraldPrimary)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "عميل نقدي (بدون ربط بعميل مسجل)",
+                                    text = "عميل نقدي (بدون تسجيل)",
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = if (isAnonymous) FontWeight.Bold else FontWeight.Normal
                                 )
@@ -449,7 +449,7 @@ fun CustomerPickerDialog(
                                 }
                                 if (cust.creditBalance > 0) {
                                     Text(
-                                        text = "رصيد دائن: ${CalculationEngine.formatNumber(cust.creditBalance)}",
+                                        text = "دائن: ${CalculationEngine.formatNumber(cust.creditBalance)}",
                                         style = MaterialTheme.typography.labelMedium,
                                         color = StatusSettlementPurple
                                     )
@@ -464,7 +464,7 @@ fun CustomerPickerDialog(
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null)
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("إضافة عميل جديد سريعًا")
+                        Text("إضافة عميل جديد")
                     }
                 } else {
                     Text(
@@ -502,7 +502,7 @@ fun CustomerPickerDialog(
                             Text("حفظ العميل")
                         }
                         TextButton(onClick = { showNewCustomerForm = false }) {
-                            Text("رجوع للقائمة")
+                            Text("رجوع")
                         }
                     }
                 }
@@ -511,36 +511,31 @@ fun CustomerPickerDialog(
                     value = notesText,
                     onValueChange = { notesText = it },
                     label = { Text("ملاحظات الفاتورة (اختياري)") },
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 if (isApprovedInvoice) {
                     OutlinedTextField(
                         value = auditReason,
-                        onValueChange = { auditReason = it; errorMsg = null },
-                        label = { Text("سبب التعديل (إلزامي للفاتورة المعتمدة)") },
+                        onValueChange = { auditReason = it },
+                        label = { Text("سبب التعديل (اختياري)") },
+                        singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                }
-
-                errorMsg?.let {
-                    Text(text = it, color = StatusUnpaidRed, style = MaterialTheme.typography.bodySmall)
                 }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    if (isApprovedInvoice && auditReason.isBlank()) {
-                        errorMsg = "يرجى كتابة سبب التعديل"
-                        return@Button
-                    }
-                    onSelectCustomerAndNotes(selectedCustomer, notesText, auditReason.ifBlank { null })
+                    val reason = if (isApprovedInvoice) auditReason.ifBlank { null } else null
+                    onSelectCustomerAndNotes(selectedCustomer, notesText, reason)
                     onDismiss()
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
             ) {
-                Text("حفظ وتطبيق")
+                Text("حفظ")
             }
         },
         dismissButton = {
@@ -612,7 +607,7 @@ fun RecordPaymentDialog(
                         FilterChip(
                             selected = method == m,
                             onClick = { method = m },
-                            label = { Text(m) },
+                            label = { Text(m, softWrap = false, maxLines = 1) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = EmeraldPrimary,
                                 selectedLabelColor = Color.White
@@ -677,7 +672,7 @@ fun OverpaymentSettlementDialog(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(Icons.Default.WarningAmber, contentDescription = null, tint = StatusSettlementPurple)
                 Text(
-                    text = "تسوية فائض مدفوعات الفاتورة #$invoiceNumber",
+                    text = "تسوية فائض الفاتورة #$invoiceNumber",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -701,17 +696,14 @@ fun OverpaymentSettlementDialog(
                             color = StatusSettlementPurple,
                             fontWeight = FontWeight.Bold
                         )
-                        Text(
-                            text = "وفق القاعدة المحاسبية المعتمدة، لا يظهر المتبقي بالسالب. اختر طريقة معالجة الفائض:",
-                            style = MaterialTheme.typography.bodySmall
-                        )
                     }
                 }
 
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it },
-                    label = { Text("بيان التسوية") },
+                    label = { Text("بيان التسوية (اختياري)") },
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -755,14 +747,14 @@ fun AuditLogsDialog(
     logs: List<AuditLogEntity>,
     onDismiss: () -> Unit
 ) {
-    val dateFormat = remember { SimpleDateFormat("yyyy/MM/dd hh:mm a", Locale("ar", "EG")) }
+    val dateFormat = remember { SimpleDateFormat("yyyy/MM/dd hh:mm a", Locale.forLanguageTag("ar-EG")) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(Icons.Default.History, contentDescription = null, tint = EmeraldPrimary)
                 Text(
-                    text = "سجل التعديلات (Audit Log) — #$invoiceNumber",
+                    text = "سجل التعديلات — #$invoiceNumber",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )

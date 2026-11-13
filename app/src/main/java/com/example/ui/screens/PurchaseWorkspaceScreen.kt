@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -19,11 +20,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Payments
@@ -37,6 +41,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,7 +53,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -58,7 +66,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.AppSettingsEntity
@@ -83,10 +93,13 @@ import com.example.ui.theme.WheatGold
 import com.example.ui.theme.WheatGoldLight
 import com.example.ui.viewmodel.InvoiceWithCalc
 import com.example.util.PdfInvoiceExporter
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
+/**
+ * Multi-page wizard for creating and editing an invoice:
+ * - Page 0: Customer & First Section Setup (العميل والمحصول)
+ * - Page 1..N: Dedicated Page per Section for fast Weight Entry & 5-Weight Columns (صفحة مستقلة لكل قسم)
+ * - Page N+1: Final Summary, Pricing, Payments, PDF Export & Share (الملخص والمحاسبة)
+ */
 @Composable
 fun PurchaseWorkspaceScreen(
     invoiceWithCalc: InvoiceWithCalc?,
@@ -111,7 +124,8 @@ fun PurchaseWorkspaceScreen(
     onQuickCreateCustomer: (CustomerEntity) -> Unit,
     onApproveInvoice: () -> Unit,
     onRecordPayment: (Double, String, String) -> Unit,
-    onSettleOverpayment: (Double, Boolean, String) -> Unit
+    onSettleOverpayment: (Double, Boolean, String) -> Unit,
+    onDeleteInvoice: (Long) -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -148,461 +162,290 @@ fun PurchaseWorkspaceScreen(
     val inv = invoiceWithCalc.details.invoice
     val calc = invoiceWithCalc.calc
     val isApproved = inv.status == InvoiceStatus.APPROVED.name
-    val activeSecCalc = calc.sectionCalculations.find { it.section.id == activeSectionId }
-        ?: calc.sectionCalculations.lastOrNull()
+    val sectionsCount = calc.sectionCalculations.size
+    val summaryStepIndex = sectionsCount + 1
 
-    var showCustomerDialog by remember { mutableStateOf(false) }
+    // Wizard step state:
+    // 0 = Customer & initial setup
+    // 1..sectionsCount = Individual Section Page
+    // sectionsCount + 1 = Final Summary & Pricing Page
+    var currentStep by remember(inv.id) {
+        mutableIntStateOf(if (calc.totalBagCount > 0) 1 else 0)
+    }
+
+    // Keep currentStep valid when sections are added or removed
+    LaunchedEffect(sectionsCount, activeSectionId) {
+        val matchedIndex = calc.sectionCalculations.indexOfFirst { it.section.id == activeSectionId }
+        if (matchedIndex >= 0 && currentStep in 1..sectionsCount) {
+            currentStep = matchedIndex + 1
+        } else if (currentStep > summaryStepIndex) {
+            currentStep = summaryStepIndex
+        }
+    }
+
     var showAddSectionDialog by remember { mutableStateOf(false) }
     var editingSection by remember { mutableStateOf<InvoiceSectionEntity?>(null) }
     var editingWeight by remember { mutableStateOf<WeightEntity?>(null) }
     var showPaymentDialog by remember { mutableStateOf(false) }
     var showSettlementDialog by remember { mutableStateOf(false) }
     var showAuditLogsDialog by remember { mutableStateOf(false) }
-    var showAddWeightAuditDialog by remember { mutableStateOf(false) }
-    var pendingWeightAuditReason by remember { mutableStateOf("") }
+    var showDeleteInvoiceConfirm by remember { mutableStateOf(false) }
 
-    val dateFormat = remember { SimpleDateFormat("dd نوفمبر yyyy", Locale("ar", "EG")) }
-
-    LazyColumn(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .testTag("purchase_workspace_screen"),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .testTag("purchase_workspace_screen")
     ) {
-        // 1. Top Invoice Header Card (Matches Attachment #1)
-        item {
-            Card(
+        // 1. Compact Top Bar + Wizard Step Bar (Takes minimal height!)
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 2.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, WheatCardBorder, RoundedCornerShape(18.dp)),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                text = "عملية شراء — فاتورة #${inv.invoiceNumber}",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "${activeSecCalc?.section?.productNameSnapshot ?: "حبوب"} • ${dateFormat.format(Date(inv.invoiceDate))}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (invoiceWithCalc.details.auditLogs.isNotEmpty()) {
-                                IconButton(
-                                    onClick = { showAuditLogsDialog = true },
-                                    modifier = Modifier.testTag("open_audit_logs_button")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.History,
-                                        contentDescription = "سجل التعديلات",
-                                        tint = EmeraldPrimary
-                                    )
-                                }
-                            }
-                            InvoiceStatusBadge(status = inv.status)
-                        }
-                    }
-
-                    // Customer Selector Strip
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { showCustomerDialog = true }
-                            .testTag("select_customer_strip")
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(Icons.Default.Person, contentDescription = null, tint = EmeraldPrimary)
-                                Column {
-                                    Text(
-                                        text = "العميل: ${inv.customerNameSnapshot}",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    if (inv.customerPhoneSnapshot.isNotBlank()) {
-                                        Text(
-                                            text = inv.customerPhoneSnapshot,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-                            Text(
-                                text = "تغيير العميل",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = EmeraldPrimary
-                            )
-                        }
-                    }
-
-                    // Twin Summary Boxes: Bag Count & Total Weight (Matches Attachment #1)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Surface(
-                            modifier = Modifier
-                                .weight(1f)
-                                .border(1.dp, WheatCardBorder, RoundedCornerShape(14.dp)),
-                            shape = RoundedCornerShape(14.dp),
-                            color = MaterialTheme.colorScheme.background
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(14.dp),
-                                horizontalAlignment = Alignment.Start
-                            ) {
-                                Text(
-                                    text = "${activeSecCalc?.bagCount ?: 0}",
-                                    style = MaterialTheme.typography.headlineLarge,
-                                    color = EmeraldPrimary,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "عدد الشكاير (القسم ${activeSecCalc?.section?.sectionOrder ?: 1})",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
-                        Surface(
-                            modifier = Modifier
-                                .weight(1f)
-                                .border(1.dp, WheatCardBorder, RoundedCornerShape(14.dp)),
-                            shape = RoundedCornerShape(14.dp),
-                            color = MaterialTheme.colorScheme.background
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(14.dp),
-                                horizontalAlignment = Alignment.Start
-                            ) {
-                                Text(
-                                    text = CalculationEngine.formatWeight(activeSecCalc?.totalWeightKg ?: 0.0),
-                                    style = MaterialTheme.typography.headlineLarge,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "إجمالي وزن القسم (كجم)",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Overpayment Alert Banner (If invoice total became less than net paid)
-        if (calc.overpaidAmount > 0.01) {
-            item {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(1.5.dp, StatusSettlementPurple, RoundedCornerShape(14.dp)),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = StatusSettlementBg)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(Icons.Default.WarningAmber, contentDescription = null, tint = StatusSettlementPurple)
-                            Text(
-                                text = "تنبيه محاسبي: يوجد مبلغ فائض مدفوع بقيمة ${CalculationEngine.formatCurrency(calc.overpaidAmount, settings.currencySymbol)}",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = StatusSettlementPurple,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        Text(
-                            text = "تم تخفيض قيمة الفاتورة عن المبلغ المسدد مسبقًا. اضغط لمعالجة الفرق برد نقدي أو ترحيله لرصيد العميل.",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        Button(
-                            onClick = { showSettlementDialog = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = StatusSettlementPurple),
-                            modifier = Modifier.fillMaxWidth().testTag("open_settlement_dialog_button")
-                        ) {
-                            Text("تسوية المبلغ الزائد الآن")
-                        }
-                    }
-                }
-            }
-        }
-
-        // 2. Section Tabs & Add New Section Divider Button (Supports returning to previous sections)
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "أقسام الفاتورة (اضغط للتنقل أو الرجوع لقسم سابق)",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    TextButton(
-                        onClick = { showAddSectionDialog = true },
-                        modifier = Modifier.testTag("add_section_top_button")
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Icon(Icons.Default.ContentCut, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("إضافة فاصل / قسم جديد")
+                        Text(
+                            text = "فاتورة #${inv.invoiceNumber}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        InvoiceStatusBadge(status = inv.status)
+                        Text(
+                            text = "• ${inv.customerNameSnapshot}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
-                }
 
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(calc.sectionCalculations, key = { it.section.id }) { secItem ->
-                        val isSelected = secItem.section.id == activeSecCalc?.section?.id
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (isSelected) EmeraldPrimary else MaterialTheme.colorScheme.surface,
-                            modifier = Modifier
-                                .border(
-                                    width = 1.dp,
-                                    color = if (isSelected) EmeraldPrimary else WheatCardBorder,
-                                    shape = RoundedCornerShape(12.dp)
-                                )
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable { onSelectSection(secItem.section.id) }
-                                .testTag("section_tab_${secItem.section.sectionOrder}")
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (invoiceWithCalc.details.auditLogs.isNotEmpty()) {
+                            IconButton(
+                                onClick = { showAuditLogsDialog = true },
+                                modifier = Modifier.size(34.dp).testTag("open_audit_logs_button")
                             ) {
-                                Text(
-                                    text = "القسم ${secItem.section.sectionOrder}: ${secItem.section.productNameSnapshot}",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "${secItem.bagCount} شكارة • ${CalculationEngine.formatWeight(secItem.totalWeightKg)} كجم",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (isSelected) WheatGoldLight else MaterialTheme.colorScheme.onSurfaceVariant
+                                Icon(
+                                    imageVector = Icons.Default.History,
+                                    contentDescription = "سجل التعديلات",
+                                    tint = EmeraldPrimary,
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
+                        }
+                        IconButton(
+                            onClick = { showDeleteInvoiceConfirm = true },
+                            modifier = Modifier.size(34.dp).testTag("delete_invoice_top_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "حذف الفاتورة",
+                                tint = StatusUnpaidRed,
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
                     }
                 }
-            }
-        }
 
-        // 3. Active Section Pricing Bar + Built-in One-Handed Quick Keypad
-        if (activeSecCalc != null) {
-            item {
-                ActiveSectionAndKeypadCard(
-                    secCalc = activeSecCalc,
-                    keypadInput = keypadInput,
-                    currencySymbol = settings.currencySymbol,
-                    onEditSection = { editingSection = activeSecCalc.section },
-                    onDigit = onKeypadDigit,
-                    onBackspace = onKeypadBackspace,
-                    onClear = onKeypadClear,
-                    onSubmitWeight = {
-                        if (isApproved) {
-                            val v = keypadInput.toDoubleOrNull()
-                            if (v != null && v > 0.0) {
-                                showAddWeightAuditDialog = true
-                            } else {
-                                onAddWeightFromKeypad(null)
-                            }
-                        } else {
-                            onAddWeightFromKeypad(null)
-                        }
-                    }
-                )
-            }
-
-            // 4. 5-Weight Grouping Columns (Matches Attachment #1 Layout)
-            item {
-                FiveWeightColumnsSection(
-                    secCalc = activeSecCalc,
-                    onWeightClick = { w -> editingWeight = w }
-                )
-            }
-        }
-
-        // 5. Invoice Segmentation & Multi-Section Financial Breakdown (Matches Attachment #3)
-        item {
-            InvoiceSegmentationOverviewCard(
-                invoiceNumber = inv.invoiceNumber,
-                calc = calc,
-                currencySymbol = settings.currencySymbol,
-                onSelectSection = onSelectSection,
-                onEditSection = { editingSection = it },
-                onAddSection = { showAddSectionDialog = true }
-            )
-        }
-
-        // 6. Bottom Action Buttons (Record Payment, Approve, Export PDF, WhatsApp, Print)
-        item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, WheatCardBorder, RoundedCornerShape(18.dp)),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                // Multi-Step Navigation Pills (Customer -> Section 1 -> Section 2 ... -> [+ قسم جديد] -> Summary)
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = "إجراءات الاعتماد والسداد والتصدير",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                    // Step 0: Customer & Grain Setup
+                    item {
+                        WizardStepPill(
+                            title = "1. العميل",
+                            subtitle = inv.customerNameSnapshot.take(12),
+                            isSelected = currentStep == 0,
+                            onClick = { currentStep = 0 },
+                            testTag = "step_customer"
+                        )
+                    }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = { showPaymentDialog = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = WheatGold),
+                    // Steps 1..N: Dedicated Page for Each Section
+                    items(calc.sectionCalculations.size) { index ->
+                        val secCalc = calc.sectionCalculations[index]
+                        val stepNum = index + 1
+                        WizardStepPill(
+                            title = "قسم ${secCalc.section.sectionOrder}: ${secCalc.section.productNameSnapshot}",
+                            subtitle = "${secCalc.bagCount} شكارة (${CalculationEngine.formatWeight(secCalc.totalWeightKg)} كجم)",
+                            isSelected = currentStep == stepNum,
+                            onClick = {
+                                onSelectSection(secCalc.section.id)
+                                currentStep = stepNum
+                            },
+                            testTag = "section_tab_${secCalc.section.sectionOrder}"
+                        )
+                    }
+
+                    // Single Clean Button to Add a New Section
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = WheatGoldLight,
                             modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .testTag("workspace_record_payment_button")
+                                .border(1.dp, WheatGold, RoundedCornerShape(10.dp))
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { showAddSectionDialog = true }
+                                .testTag("add_section_top_button")
                         ) {
-                            Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("تسجيل دفعة")
-                        }
-
-                        if (!isApproved) {
-                            Button(
-                                onClick = onApproveInvoice,
-                                colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(48.dp)
-                                    .testTag("workspace_approve_invoice_button")
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("اعتماد الفاتورة")
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = null,
+                                    tint = WheatGold,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "إضافة قسم جديد",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = WheatGold,
+                                    fontWeight = FontWeight.Bold,
+                                    softWrap = false,
+                                    maxLines = 1
+                                )
                             }
                         }
                     }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = {
-                                PdfInvoiceExporter.shareInvoicePdf(
-                                    context = context,
-                                    details = invoiceWithCalc.details,
-                                    settings = settings,
-                                    whatsAppOnly = true
-                                )
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .testTag("share_whatsapp_pdf_button")
-                        ) {
-                            Icon(Icons.Default.Share, contentDescription = null, tint = EmeraldPrimary, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("واتساب PDF")
-                        }
-
-                        OutlinedButton(
-                            onClick = {
-                                PdfInvoiceExporter.shareInvoicePdf(
-                                    context = context,
-                                    details = invoiceWithCalc.details,
-                                    settings = settings,
-                                    whatsAppOnly = false
-                                )
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .testTag("export_pdf_button")
-                        ) {
-                            Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = WheatGold, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("مشاركة PDF")
-                        }
-
-                        OutlinedButton(
-                            onClick = {
-                                PdfInvoiceExporter.printInvoicePdf(
-                                    context = context,
-                                    details = invoiceWithCalc.details,
-                                    settings = settings
-                                )
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .testTag("print_pdf_button")
-                        ) {
-                            Icon(Icons.Default.Print, contentDescription = null, tint = EmeraldDark, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("طباعة")
-                        }
+                    // Final Step: Summary & Accounting
+                    item {
+                        WizardStepPill(
+                            title = "الملخص والمحاسبة",
+                            subtitle = CalculationEngine.formatCurrency(calc.totalInvoiceAmount, settings.currencySymbol),
+                            isSelected = currentStep == summaryStepIndex,
+                            onClick = { currentStep = summaryStepIndex },
+                            testTag = "step_summary"
+                        )
                     }
+                }
+            }
+        }
+
+        // 2. Active Step Content Area
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            when {
+                currentStep == 0 -> {
+                    val firstSection = calc.sectionCalculations.firstOrNull()?.section
+                    CustomerAndGrainStepPage(
+                        invoice = inv,
+                        firstSection = firstSection,
+                        customers = customers,
+                        products = products,
+                        pricingUnits = pricingUnits,
+                        currencySymbol = settings.currencySymbol,
+                        onUpdateCustomerAndNotes = { cust, notes ->
+                            onUpdateHeader(cust, notes, null)
+                        },
+                        onQuickCreateCustomer = onQuickCreateCustomer,
+                        onUpdateFirstSection = { prod, unit, price ->
+                            if (firstSection != null) {
+                                onUpdateSection(firstSection, prod, unit, price, null)
+                            }
+                        },
+                        onProceedToWeights = {
+                            firstSection?.let { onSelectSection(it.id) }
+                            currentStep = 1
+                        }
+                    )
+                }
+
+                currentStep in 1..sectionsCount -> {
+                    val secCalc = calc.sectionCalculations[currentStep - 1]
+                    SectionWeighingStepPage(
+                        secCalc = secCalc,
+                        keypadInput = keypadInput,
+                        currencySymbol = settings.currencySymbol,
+                        onEditSectionConfig = { editingSection = secCalc.section },
+                        onDigit = onKeypadDigit,
+                        onBackspace = onKeypadBackspace,
+                        onClear = onKeypadClear,
+                        onSubmitWeight = {
+                            // Never block weight entry with mandatory audit popup!
+                            val autoReason = if (isApproved) "إضافة وزن" else null
+                            onAddWeightFromKeypad(autoReason)
+                        },
+                        onWeightClick = { w -> editingWeight = w },
+                        onGoToPreviousStep = { currentStep = (currentStep - 1).coerceAtLeast(0) },
+                        onGoToNextStep = {
+                            if (currentStep < sectionsCount) {
+                                val nextSec = calc.sectionCalculations[currentStep].section
+                                onSelectSection(nextSec.id)
+                                currentStep += 1
+                            } else {
+                                currentStep = summaryStepIndex
+                            }
+                        },
+                        hasNextSection = currentStep < sectionsCount
+                    )
+                }
+
+                else -> {
+                    FinalSummaryStepPage(
+                        invoiceWithCalc = invoiceWithCalc,
+                        settings = settings,
+                        onJumpToSection = { index, secId ->
+                            onSelectSection(secId)
+                            currentStep = index + 1
+                        },
+                        onEditSection = { editingSection = it },
+                        onOpenPaymentDialog = { showPaymentDialog = true },
+                        onOpenSettlementDialog = { showSettlementDialog = true },
+                        onApproveInvoice = onApproveInvoice,
+                        onShareWhatsAppPdf = {
+                            PdfInvoiceExporter.shareInvoicePdf(
+                                context = context,
+                                details = invoiceWithCalc.details,
+                                settings = settings,
+                                whatsAppOnly = true
+                            )
+                        },
+                        onShareGeneralPdf = {
+                            PdfInvoiceExporter.shareInvoicePdf(
+                                context = context,
+                                details = invoiceWithCalc.details,
+                                settings = settings,
+                                whatsAppOnly = false
+                            )
+                        },
+                        onPrintPdf = {
+                            PdfInvoiceExporter.printInvoicePdf(
+                                context = context,
+                                details = invoiceWithCalc.details,
+                                settings = settings
+                            )
+                        },
+                        onDeleteInvoice = { showDeleteInvoiceConfirm = true }
+                    )
                 }
             }
         }
     }
 
     // --- Dialogs ---
-    if (showCustomerDialog) {
-        CustomerPickerDialog(
-            customers = customers,
-            currentCustomerId = inv.customerId,
-            currentNotes = inv.notes,
-            isApprovedInvoice = isApproved,
-            onDismiss = { showCustomerDialog = false },
-            onSelectCustomerAndNotes = onUpdateHeader,
-            onQuickCreateCustomer = onQuickCreateCustomer
-        )
-    }
-
     if (showAddSectionDialog) {
         AddOrEditSectionDialog(
             isEdit = false,
@@ -611,7 +454,10 @@ fun PurchaseWorkspaceScreen(
             isApprovedInvoice = isApproved,
             currencySymbol = settings.currencySymbol,
             onDismiss = { showAddSectionDialog = false },
-            onConfirm = onAddSection
+            onConfirm = { prod, unit, price, reason ->
+                onAddSection(prod, unit, price, reason)
+                currentStep = sectionsCount + 1
+            }
         )
     }
 
@@ -634,9 +480,10 @@ fun PurchaseWorkspaceScreen(
     }
 
     editingWeight?.let { w ->
+        val activeSecOrder = calc.sectionCalculations.find { it.section.id == w.sectionId }?.section?.sectionOrder ?: 1
         EditOrDeleteWeightDialog(
             weight = w,
-            sectionOrder = activeSecCalc?.section?.sectionOrder ?: 1,
+            sectionOrder = activeSecOrder,
             isApprovedInvoice = isApproved,
             onDismiss = { editingWeight = null },
             onUpdateWeight = { newKg, reason -> onUpdateWeight(w, newKg, reason) },
@@ -678,35 +525,25 @@ fun PurchaseWorkspaceScreen(
         )
     }
 
-    if (showAddWeightAuditDialog) {
+    if (showDeleteInvoiceConfirm) {
         AlertDialog(
-            onDismissRequest = { showAddWeightAuditDialog = false },
-            title = { Text("سبب إضافة وزن لفاتورة معتمدة") },
-            text = {
-                OutlinedTextField(
-                    value = pendingWeightAuditReason,
-                    onValueChange = { pendingWeightAuditReason = it },
-                    label = { Text("سبب الإضافة (إلزامي)") },
-                    placeholder = { Text("مثال: إضافة شكارة منسية في القسم") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
+            onDismissRequest = { showDeleteInvoiceConfirm = false },
+            title = { Text("حذف الفاتورة #${inv.invoiceNumber}") },
+            text = { Text("هل أنت متأكد من حذف هذه الفاتورة نهائيًا؟ ستختفي الفاتورة من سجل العميل وجميع الحسابات.") },
             confirmButton = {
                 Button(
                     onClick = {
-                        if (pendingWeightAuditReason.isNotBlank()) {
-                            onAddWeightFromKeypad(pendingWeightAuditReason.trim())
-                            pendingWeightAuditReason = ""
-                            showAddWeightAuditDialog = false
-                        }
+                        showDeleteInvoiceConfirm = false
+                        onDeleteInvoice(inv.id)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
+                    colors = ButtonDefaults.buttonColors(containerColor = StatusUnpaidRed),
+                    modifier = Modifier.testTag("confirm_delete_invoice_button")
                 ) {
-                    Text("تأكيد وإضافة الوزن")
+                    Text("حذف الفاتورة")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showAddWeightAuditDialog = false }) {
+                TextButton(onClick = { showDeleteInvoiceConfirm = false }) {
                     Text("إلغاء")
                 }
             }
@@ -715,180 +552,927 @@ fun PurchaseWorkspaceScreen(
 }
 
 @Composable
-private fun ActiveSectionAndKeypadCard(
-    secCalc: SectionCalculation,
-    keypadInput: String,
-    currencySymbol: String,
-    onEditSection: () -> Unit,
-    onDigit: (String) -> Unit,
-    onBackspace: () -> Unit,
-    onClear: () -> Unit,
-    onSubmitWeight: () -> Unit
+private fun WizardStepPill(
+    title: String,
+    subtitle: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    testTag: String
 ) {
-    val sec = secCalc.section
-    Card(
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = if (isSelected) EmeraldPrimary else MaterialTheme.colorScheme.background,
         modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, WheatCardBorder, RoundedCornerShape(18.dp)),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            .border(
+                width = 1.dp,
+                color = if (isSelected) EmeraldPrimary else WheatCardBorder,
+                shape = RoundedCornerShape(10.dp)
+            )
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .testTag(testTag)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp)
         ) {
-            // Section Pricing Banner
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = EmeraldLight,
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
+                softWrap = false,
+                maxLines = 1
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                fontSize = 10.sp,
+                color = if (isSelected) WheatGoldLight else MaterialTheme.colorScheme.onSurfaceVariant,
+                softWrap = false,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun CustomerAndGrainStepPage(
+    invoice: com.example.data.local.InvoiceEntity,
+    firstSection: InvoiceSectionEntity?,
+    customers: List<CustomerEntity>,
+    products: List<ProductEntity>,
+    pricingUnits: List<PricingUnitEntity>,
+    currencySymbol: String,
+    onUpdateCustomerAndNotes: (CustomerEntity?, String) -> Unit,
+    onQuickCreateCustomer: (CustomerEntity) -> Unit,
+    onUpdateFirstSection: (ProductEntity, PricingUnitEntity, Double) -> Unit,
+    onProceedToWeights: () -> Unit
+) {
+    val activeProducts = remember(products) { products.filter { it.isActive }.ifEmpty { products } }
+    val activeUnits = remember(pricingUnits) { pricingUnits.filter { it.isActive }.ifEmpty { pricingUnits } }
+
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedCustomer by remember(invoice.customerId, customers) {
+        mutableStateOf(customers.find { it.id == invoice.customerId })
+    }
+    var notesText by remember(invoice.notes) { mutableStateOf(invoice.notes) }
+
+    var showNewCustomerInline by remember { mutableStateOf(false) }
+    var newCustomerName by remember { mutableStateOf("") }
+    var newCustomerPhone by remember { mutableStateOf("") }
+
+    var selectedProduct by remember(firstSection?.productId, activeProducts) {
+        mutableStateOf(
+            activeProducts.find { it.id == firstSection?.productId }
+                ?: activeProducts.firstOrNull()
+                ?: ProductEntity(id = 1, name = "قمح")
+        )
+    }
+    var selectedUnit by remember(firstSection?.unitId, activeUnits) {
+        mutableStateOf(
+            activeUnits.find { it.id == firstSection?.unitId }
+                ?: activeUnits.find { it.linkedProductId == selectedProduct.id }
+                ?: activeUnits.firstOrNull()
+                ?: PricingUnitEntity(id = 1, name = "طن", weightKg = 1000.0)
+        )
+    }
+    var unitPriceText by remember(firstSection?.unitPrice) {
+        mutableStateOf(firstSection?.unitPrice?.toString() ?: "4000")
+    }
+
+    val filteredCustomers = remember(customers, searchQuery) {
+        if (searchQuery.isBlank()) customers
+        else customers.filter {
+            it.name.contains(searchQuery, ignoreCase = true) || it.phone.contains(searchQuery)
+        }
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // 1. Customer Selection Card
+        item {
+            Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable(onClick = onEditSection)
-                    .testTag("edit_active_section_banner")
+                    .border(1.dp, WheatCardBorder, RoundedCornerShape(16.dp)),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "القسم ${sec.sectionOrder}: ${sec.productNameSnapshot} • السعر: ${CalculationEngine.formatNumber(sec.unitPrice)} $currencySymbol / ${sec.unitNameSnapshot}",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = EmeraldDark
-                        )
-                        Text(
-                            text = "وزن الوحدة: ${CalculationEngine.formatWeight(sec.unitWeightSnapshot)} كجم • سعر الكيلو: ${CalculationEngine.formatNumber(secCalc.pricePerKg, 3)} $currencySymbol • إجمالي القسم: ${CalculationEngine.formatCurrency(secCalc.sectionTotalAmount, currencySymbol)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = EmeraldPrimary
-                        )
-                    }
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = "تعديل تسعير القسم",
-                        tint = EmeraldPrimary
-                    )
-                }
-            }
-
-            // Weight Entry Header + Display Box + "وزن جديد" Button (Matches Attachment #1)
-            Text(
-                text = "تسجيل وزن جديد (كجم) — شكارة رقم #${secCalc.bagCount + 1} في القسم ${sec.sectionOrder}",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(54.dp)
-                        .border(1.5.dp, EmeraldPrimary, RoundedCornerShape(27.dp)),
-                    shape = RoundedCornerShape(27.dp),
-                    color = MaterialTheme.colorScheme.background
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 18.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = if (keypadInput.isEmpty()) "0.0" else keypadInput,
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = if (keypadInput.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else EmeraldPrimary,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.testTag("keypad_display_text")
+                            text = "1. اختيار العميل",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
                         )
-                        Text(
-                            text = "كجم صافي",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        TextButton(onClick = { showNewCustomerInline = !showNewCustomerInline }) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(if (showNewCustomerInline) "قائمة العملاء" else "عميل جديد")
+                        }
                     }
-                }
 
-                Button(
-                    onClick = onSubmitWeight,
-                    shape = RoundedCornerShape(27.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF111827),
-                        contentColor = Color.White
-                    ),
-                    modifier = Modifier
-                        .height(54.dp)
-                        .testTag("submit_weight_button")
-                ) {
-                    Text(
-                        text = "وزن جديد +",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
+                    if (showNewCustomerInline) {
+                        OutlinedTextField(
+                            value = newCustomerName,
+                            onValueChange = { newCustomerName = it },
+                            label = { Text("اسم العميل الجديد") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = newCustomerPhone,
+                            onValueChange = { newCustomerPhone = it },
+                            label = { Text("رقم الهاتف") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Button(
+                            onClick = {
+                                if (newCustomerName.isNotBlank()) {
+                                    val c = CustomerEntity(name = newCustomerName.trim(), phone = newCustomerPhone.trim())
+                                    onQuickCreateCustomer(c)
+                                    showNewCustomerInline = false
+                                    newCustomerName = ""
+                                    newCustomerPhone = ""
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("حفظ العميل")
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            label = { Text("بحث باسم العميل أو رقم الهاتف") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
 
-            // Built-in One-Handed Quick Numeric Keypad
-            val rows = listOf(
-                listOf("7", "8", "9"),
-                listOf("4", "5", "6"),
-                listOf("1", "2", "3"),
-                listOf("C", "0", ".", "⌫")
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                rows.forEach { rowKeys ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        rowKeys.forEach { key ->
-                            Surface(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(48.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .border(1.dp, WheatCardBorder, RoundedCornerShape(12.dp))
-                                    .clickable {
-                                        when (key) {
-                                            "C" -> onClear()
-                                            "⌫" -> onBackspace()
-                                            else -> onDigit(key)
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 165.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            item {
+                                val isCash = selectedCustomer == null
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(if (isCash) EmeraldLight else MaterialTheme.colorScheme.background)
+                                        .border(1.dp, if (isCash) EmeraldPrimary else WheatCardBorder, RoundedCornerShape(10.dp))
+                                        .clickable {
+                                            selectedCustomer = null
+                                            onUpdateCustomerAndNotes(null, notesText)
+                                        }
+                                        .padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Person, contentDescription = null, tint = EmeraldPrimary)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "عميل نقدي (بدون تسجيل)",
+                                        fontWeight = if (isCash) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
+                            items(filteredCustomers, key = { it.id }) { cust ->
+                                val isSelected = selectedCustomer?.id == cust.id
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(if (isSelected) EmeraldLight else MaterialTheme.colorScheme.background)
+                                        .border(1.dp, if (isSelected) EmeraldPrimary else WheatCardBorder, RoundedCornerShape(10.dp))
+                                        .clickable {
+                                            selectedCustomer = cust
+                                            onUpdateCustomerAndNotes(cust, notesText)
+                                        }
+                                        .padding(10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text(cust.name, fontWeight = FontWeight.Bold)
+                                        if (cust.phone.isNotBlank()) {
+                                            Text(cust.phone, style = MaterialTheme.typography.bodySmall)
                                         }
                                     }
-                                    .testTag("keypad_key_$key"),
-                                shape = RoundedCornerShape(12.dp),
-                                color = when (key) {
-                                    "C" -> WheatGoldLight
-                                    "⌫" -> MaterialTheme.colorScheme.surfaceVariant
-                                    else -> MaterialTheme.colorScheme.background
-                                }
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    if (key == "⌫") {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Filled.Backspace,
-                                            contentDescription = "حذف رقم",
-                                            tint = MaterialTheme.colorScheme.onSurface
-                                        )
-                                    } else {
-                                        Text(
-                                            text = key,
-                                            fontSize = 18.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            textAlign = TextAlign.Center
-                                        )
+                                    if (isSelected) {
+                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldPrimary)
                                     }
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // 2. Grain Type & Initial Pricing Card for Section 1
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, WheatCardBorder, RoundedCornerShape(16.dp)),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "2. تحديد نوع الحبوب وتسعير القسم الأول",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(activeProducts) { prod ->
+                            FilterChip(
+                                selected = selectedProduct.id == prod.id,
+                                onClick = {
+                                    selectedProduct = prod
+                                    val linkedUnit = activeUnits.find { it.linkedProductId == prod.id } ?: selectedUnit
+                                    selectedUnit = linkedUnit
+                                    val p = unitPriceText.toDoubleOrNull() ?: 4000.0
+                                    onUpdateFirstSection(prod, linkedUnit, p)
+                                },
+                                label = { Text(prod.name, softWrap = false, maxLines = 1) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = EmeraldPrimary,
+                                    selectedLabelColor = Color.White
+                                )
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = unitPriceText,
+                            onValueChange = {
+                                unitPriceText = it
+                                val p = it.toDoubleOrNull()
+                                if (p != null && p > 0) {
+                                    onUpdateFirstSection(selectedProduct, selectedUnit, p)
+                                }
+                            },
+                            label = { Text("سعر ${selectedUnit.name} ($currencySymbol)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        OutlinedTextField(
+                            value = notesText,
+                            onValueChange = {
+                                notesText = it
+                                onUpdateCustomerAndNotes(selectedCustomer, it)
+                            },
+                            label = { Text("ملاحظات (اختياري)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(activeUnits) { unit ->
+                            FilterChip(
+                                selected = selectedUnit.id == unit.id,
+                                onClick = {
+                                    selectedUnit = unit
+                                    val p = unitPriceText.toDoubleOrNull() ?: 4000.0
+                                    onUpdateFirstSection(selectedProduct, unit, p)
+                                },
+                                label = {
+                                    Text(
+                                        text = "${unit.name} (${CalculationEngine.formatWeight(unit.weightKg)} كجم)",
+                                        softWrap = false,
+                                        maxLines = 1
+                                    )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = WheatGold,
+                                    selectedLabelColor = Color.White
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Proceed to Weighing Page Button
+        item {
+            Button(
+                onClick = {
+                    val p = unitPriceText.toDoubleOrNull() ?: 4000.0
+                    onUpdateCustomerAndNotes(selectedCustomer, notesText)
+                    onUpdateFirstSection(selectedProduct, selectedUnit, p)
+                    onProceedToWeights()
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .testTag("proceed_to_weights_button")
+            ) {
+                Text(
+                    text = "التالي: إدخال أوزان القسم الأول (${selectedProduct.name})",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionWeighingStepPage(
+    secCalc: SectionCalculation,
+    keypadInput: String,
+    currencySymbol: String,
+    onEditSectionConfig: () -> Unit,
+    onDigit: (String) -> Unit,
+    onBackspace: () -> Unit,
+    onClear: () -> Unit,
+    onSubmitWeight: () -> Unit,
+    onWeightClick: (WeightEntity) -> Unit,
+    onGoToPreviousStep: () -> Unit,
+    onGoToNextStep: () -> Unit,
+    hasNextSection: Boolean
+) {
+    val sec = secCalc.section
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // 1. Compact Section Info Strip + Quick Keypad Card
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, WheatCardBorder, RoundedCornerShape(16.dp)),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Single compact line for section product, bag count, weight & price edit
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(EmeraldLight)
+                            .clickable(onClick = onEditSectionConfig)
+                            .padding(horizontal = 10.dp, vertical = 7.dp)
+                            .testTag("edit_active_section_banner"),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "قسم ${sec.sectionOrder}: ${sec.productNameSnapshot} (${CalculationEngine.formatNumber(sec.unitPrice)} $currencySymbol/${sec.unitNameSnapshot})",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = EmeraldDark,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "${secCalc.bagCount} شكارة • ${CalculationEngine.formatWeight(secCalc.totalWeightKg)} كجم",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = EmeraldPrimary,
+                                fontWeight = FontWeight.Bold,
+                                softWrap = false,
+                                maxLines = 1
+                            )
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "تعديل القسم",
+                                tint = EmeraldPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    // Weight Input Display + Add Button
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp)
+                                .border(1.5.dp, EmeraldPrimary, RoundedCornerShape(23.dp)),
+                            shape = RoundedCornerShape(23.dp),
+                            color = MaterialTheme.colorScheme.background
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 14.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (keypadInput.isEmpty()) "0.0" else keypadInput,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = if (keypadInput.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else EmeraldPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.testTag("keypad_display_text")
+                                )
+                                Text(
+                                    text = "شكارة #${secCalc.bagCount + 1} (كجم)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    softWrap = false,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
+                        Button(
+                            onClick = onSubmitWeight,
+                            shape = RoundedCornerShape(23.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF111827),
+                                contentColor = Color.White
+                            ),
+                            modifier = Modifier
+                                .height(46.dp)
+                                .testTag("submit_weight_button")
+                        ) {
+                            Text(
+                                text = "وزن جديد +",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                softWrap = false,
+                                maxLines = 1
+                            )
+                        }
+                    }
+
+                    // Compact 4-Row Numeric Keypad
+                    val rows = listOf(
+                        listOf("7", "8", "9"),
+                        listOf("4", "5", "6"),
+                        listOf("1", "2", "3"),
+                        listOf("C", "0", ".", "⌫")
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        rows.forEach { rowKeys ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                rowKeys.forEach { key ->
+                                    Surface(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(40.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .border(1.dp, WheatCardBorder, RoundedCornerShape(10.dp))
+                                            .clickable {
+                                                when (key) {
+                                                    "C" -> onClear()
+                                                    "⌫" -> onBackspace()
+                                                    else -> onDigit(key)
+                                                }
+                                            }
+                                            .testTag("keypad_key_$key"),
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = when (key) {
+                                            "C" -> WheatGoldLight
+                                            "⌫" -> MaterialTheme.colorScheme.surfaceVariant
+                                            else -> MaterialTheme.colorScheme.background
+                                        }
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            if (key == "⌫") {
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Filled.Backspace,
+                                                    contentDescription = "حذف رقم",
+                                                    tint = MaterialTheme.colorScheme.onSurface,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            } else {
+                                                Text(
+                                                    text = key,
+                                                    fontSize = 16.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    textAlign = TextAlign.Center
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. 5-Weight Columns Table directly underneath the keypad!
+        item {
+            FiveWeightColumnsSection(
+                secCalc = secCalc,
+                onWeightClick = onWeightClick
+            )
+        }
+
+        // 3. Bottom Step Navigation Buttons (Previous / Next Section or Final Summary)
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onGoToPreviousStep,
+                    modifier = Modifier.weight(1f).height(46.dp)
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("السابق", softWrap = false, maxLines = 1)
+                }
+
+                Button(
+                    onClick = onGoToNextStep,
+                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                    modifier = Modifier
+                        .weight(2f)
+                        .height(46.dp)
+                        .testTag("next_step_from_weights_button")
+                ) {
+                    Text(
+                        text = if (hasNextSection) "القسم التالي" else "الملخص والمحاسبة النهائية",
+                        fontWeight = FontWeight.Bold,
+                        softWrap = false,
+                        maxLines = 1
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FinalSummaryStepPage(
+    invoiceWithCalc: InvoiceWithCalc,
+    settings: AppSettingsEntity,
+    onJumpToSection: (Int, Long) -> Unit,
+    onEditSection: (InvoiceSectionEntity) -> Unit,
+    onOpenPaymentDialog: () -> Unit,
+    onOpenSettlementDialog: () -> Unit,
+    onApproveInvoice: () -> Unit,
+    onShareWhatsAppPdf: () -> Unit,
+    onShareGeneralPdf: () -> Unit,
+    onPrintPdf: () -> Unit,
+    onDeleteInvoice: () -> Unit
+) {
+    val inv = invoiceWithCalc.details.invoice
+    val calc = invoiceWithCalc.calc
+    val isApproved = inv.status == InvoiceStatus.APPROVED.name
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        if (calc.overpaidAmount > 0.01) {
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.5.dp, StatusSettlementPurple, RoundedCornerShape(14.dp)),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = StatusSettlementBg)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Default.WarningAmber, contentDescription = null, tint = StatusSettlementPurple)
+                            Text(
+                                text = "فائض مسدد: ${CalculationEngine.formatCurrency(calc.overpaidAmount, settings.currencySymbol)}",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = StatusSettlementPurple,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Button(
+                            onClick = onOpenSettlementDialog,
+                            colors = ButtonDefaults.buttonColors(containerColor = StatusSettlementPurple),
+                            modifier = Modifier.fillMaxWidth().testTag("open_settlement_dialog_button")
+                        ) {
+                            Text("تسوية المبلغ الزائد الآن")
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sections & Pricing Breakdown
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, WheatCardBorder, RoundedCornerShape(16.dp)),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "ملخص التسعير والأقسام — فاتورة #${inv.invoiceNumber}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    calc.sectionCalculations.forEachIndexed { idx, secCalc ->
+                        val sec = secCalc.section
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, WheatCardBorder, RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { onJumpToSection(idx, sec.id) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.background
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "القسم ${sec.sectionOrder}: ${sec.productNameSnapshot}",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = EmeraldLight,
+                                        modifier = Modifier.clickable { onEditSection(sec) }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Text(
+                                                text = "${CalculationEngine.formatNumber(sec.unitPrice)} ${settings.currencySymbol}/${sec.unitNameSnapshot}",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = EmeraldPrimary,
+                                                softWrap = false,
+                                                maxLines = 1
+                                            )
+                                            Icon(
+                                                imageVector = Icons.Default.Edit,
+                                                contentDescription = "تعديل السعر",
+                                                tint = EmeraldPrimary,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "الوزن (${secCalc.bagCount} شكارة • ${secCalc.groups.size} أعمدة):",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Text(
+                                        text = "${CalculationEngine.formatWeight(secCalc.totalWeightKg)} كجم",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "سعر الكيلو: ${CalculationEngine.formatNumber(secCalc.pricePerKg, 3)} ${settings.currencySymbol}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = "إجمالي القسم: ${CalculationEngine.formatCurrency(secCalc.sectionTotalAmount, settings.currencySymbol)}",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = EmeraldPrimary
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = WheatCardBorder)
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("إجمالي الوزن الكلي (${calc.totalBagCount} شكارة):", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            text = "${CalculationEngine.formatWeight(calc.totalWeightKg)} كجم",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("الإجمالي النهائي للفاتورة:", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = CalculationEngine.formatCurrency(calc.totalInvoiceAmount, settings.currencySymbol),
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = StatusPaidGreen
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("إجمالي المدفوع الصافي:", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            text = CalculationEngine.formatCurrency(calc.netPaidAmount, settings.currencySymbol),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = EmeraldPrimary
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("المتبقي المستحق:", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        PaymentStatusBadge(paymentStatus = calc.paymentStatus)
+                        Text(
+                            text = CalculationEngine.formatCurrency(calc.remainingAmount, settings.currencySymbol),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = if (calc.remainingAmount > 0) StatusUnpaidRed else StatusPaidGreen
+                        )
+                    }
+                }
+            }
+        }
+
+        // Actions Card (Payments, Approve, PDF Export, Print, Delete)
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, WheatCardBorder, RoundedCornerShape(16.dp)),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = onOpenPaymentDialog,
+                            colors = ButtonDefaults.buttonColors(containerColor = WheatGold),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .testTag("workspace_record_payment_button")
+                        ) {
+                            Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("تسجيل دفعة", softWrap = false, maxLines = 1)
+                        }
+
+                        if (!isApproved) {
+                            Button(
+                                onClick = onApproveInvoice,
+                                colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .testTag("workspace_approve_invoice_button")
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("اعتماد الفاتورة", softWrap = false, maxLines = 1)
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onShareWhatsAppPdf,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp)
+                                .testTag("share_whatsapp_pdf_button")
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = null, tint = EmeraldPrimary, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("واتساب PDF", softWrap = false, maxLines = 1)
+                        }
+
+                        OutlinedButton(
+                            onClick = onShareGeneralPdf,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp)
+                                .testTag("export_pdf_button")
+                        ) {
+                            Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = WheatGold, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("تصدير PDF", softWrap = false, maxLines = 1)
+                        }
+
+                        OutlinedButton(
+                            onClick = onPrintPdf,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp)
+                                .testTag("print_pdf_button")
+                        ) {
+                            Icon(Icons.Default.Print, contentDescription = null, tint = EmeraldDark, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("طباعة", softWrap = false, maxLines = 1)
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = onDeleteInvoice,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = StatusUnpaidRed),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("summary_delete_invoice_button")
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("حذف هذه الفاتورة نهائيًا")
                     }
                 }
             }
@@ -904,13 +1488,13 @@ private fun FiveWeightColumnsSection(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, WheatCardBorder, RoundedCornerShape(18.dp)),
-        shape = RoundedCornerShape(18.dp),
+            .border(1.dp, WheatCardBorder, RoundedCornerShape(16.dp)),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -918,37 +1502,37 @@ private fun FiveWeightColumnsSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "الأوزان المسجلة (تجميع خماسي تلقائي)",
-                    style = MaterialTheme.typography.titleMedium,
+                    text = "جدول الأوزان (5 أوزان لكل عمود)",
+                    style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "${secCalc.bagCount} وزنًا • ${secCalc.groups.size} أعمدة",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = "الإجمالي: ${CalculationEngine.formatWeight(secCalc.totalWeightKg)} كجم (${secCalc.bagCount} شكارة)",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = EmeraldPrimary,
+                    fontWeight = FontWeight.Bold
                 )
             }
 
             if (secCalc.groups.isEmpty()) {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(10.dp),
                     color = MaterialTheme.colorScheme.background,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "لم يتم تسجيل أوزان في هذا القسم بعد. أدخل الوزن من لوحة الأرقام واضغط «وزن جديد +».",
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = "ادخل الوزن من الأعلى واضغط «وزن جديد +» ليظهر هنا في أعمدة خماسية.",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(16.dp)
+                        modifier = Modifier.padding(12.dp)
                     )
                 }
             } else {
-                // Render groups in pairs of 2 columns side-by-side (Matches Attachment #1)
                 val pairedGroups = secCalc.groups.chunked(2)
                 pairedGroups.forEach { pair ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.Top
                     ) {
                         pair.forEach { group ->
@@ -964,33 +1548,6 @@ private fun FiveWeightColumnsSection(
                     }
                 }
             }
-
-            HorizontalDivider(color = WheatCardBorder)
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = "إجمالي أوزان القسم ${secCalc.section.sectionOrder}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "${secCalc.bagCount} شكارة • ${secCalc.groups.size} مجموعات",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Text(
-                    text = "${CalculationEngine.formatWeight(secCalc.totalWeightKg)} كجم",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = EmeraldPrimary
-                )
-            }
         }
     }
 }
@@ -1002,17 +1559,17 @@ private fun WeightColumnCard(
     onWeightClick: (WeightEntity) -> Unit
 ) {
     Surface(
-        modifier = modifier.border(1.dp, WheatCardBorder, RoundedCornerShape(14.dp)),
-        shape = RoundedCornerShape(14.dp),
+        modifier = modifier.border(1.dp, WheatCardBorder, RoundedCornerShape(12.dp)),
+        shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.background
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Text(
                 text = "العمود ${group.groupIndex}",
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
                 color = EmeraldPrimary
             )
@@ -1021,9 +1578,9 @@ private fun WeightColumnCard(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(6.dp))
                         .clickable { onWeightClick(w) }
-                        .padding(vertical = 4.dp, horizontal = 4.dp)
+                        .padding(vertical = 3.dp, horizontal = 2.dp)
                         .testTag("weight_item_${w.sectionId}_${w.sequenceNumber}"),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
@@ -1058,257 +1615,13 @@ private fun WeightColumnCard(
             ) {
                 Text(
                     text = "المجموع",
-                    style = MaterialTheme.typography.labelLarge
+                    style = MaterialTheme.typography.labelMedium
                 )
                 Text(
                     text = "${CalculationEngine.formatWeight(group.groupTotalKg)} كجم",
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     color = EmeraldPrimary
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun InvoiceSegmentationOverviewCard(
-    invoiceNumber: String,
-    calc: com.example.domain.InvoiceCalculation,
-    currencySymbol: String,
-    onSelectSection: (Long) -> Unit,
-    onEditSection: (InvoiceSectionEntity) -> Unit,
-    onAddSection: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, WheatCardBorder, RoundedCornerShape(18.dp)),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = "تقسيم الفاتورة رقم #$invoiceNumber وملخص المستحقات",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-
-            calc.sectionCalculations.forEachIndexed { idx, secCalc ->
-                val sec = secCalc.section
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(
-                            width = 1.dp,
-                            color = if (idx % 2 == 1) EmeraldPrimary else WheatCardBorder,
-                            shape = RoundedCornerShape(14.dp)
-                        )
-                        .clip(RoundedCornerShape(14.dp))
-                        .clickable { onSelectSection(sec.id) },
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "القسم ${sec.sectionOrder} (${sec.productNameSnapshot})",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = EmeraldLight,
-                                modifier = Modifier.clickable { onEditSection(sec) }
-                            ) {
-                                Text(
-                                    text = "سعر ${CalculationEngine.formatNumber(sec.unitPrice)} $currencySymbol/${sec.unitNameSnapshot}",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = EmeraldPrimary,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "الوزن الإجمالي (${secCalc.bagCount} شكارة):",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = "${CalculationEngine.formatWeight(secCalc.totalWeightKg)} كجم",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "سعر الكيلو:",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = "${CalculationEngine.formatNumber(secCalc.pricePerKg, 3)} $currencySymbol",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-
-                        HorizontalDivider(color = WheatCardBorder)
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "إجمالي القسم:",
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                            Text(
-                                text = CalculationEngine.formatCurrency(secCalc.sectionTotalAmount, currencySymbol),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = EmeraldPrimary
-                            )
-                        }
-                    }
-                }
-
-                if (idx < calc.sectionCalculations.lastIndex) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        HorizontalDivider(modifier = Modifier.weight(1f), color = WheatCardBorder)
-                        Text(
-                            text = "  ✂ فاصل بين الأقسام  ",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        HorizontalDivider(modifier = Modifier.weight(1f), color = WheatCardBorder)
-                    }
-                }
-            }
-
-            OutlinedButton(
-                onClick = onAddSection,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("add_section_bottom_button")
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null)
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("إضافة قسم جديد (نوع حبوب جديد أو سعر مختلف)")
-            }
-
-            // Product Breakdown if multiple grain types exist
-            if (calc.productSummaries.size > 1) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            text = "إجمالي الوزن حسب نوع الحبوب:",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = EmeraldPrimary
-                        )
-                        calc.productSummaries.forEach { prodSum ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = "• ${prodSum.productName} (${prodSum.bagCount} شكارة)",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                Text(
-                                    text = "${CalculationEngine.formatWeight(prodSum.totalWeightKg)} كجم — ${CalculationEngine.formatCurrency(prodSum.totalAmount, currencySymbol)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            HorizontalDivider(color = WheatCardBorder)
-
-            // Final Invoice Totals Summary
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("إجمالي الوزن الكلي (${calc.totalBagCount} شكارة):", style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    text = "${CalculationEngine.formatWeight(calc.totalWeightKg)} كجم",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("الإجمالي النهائي للفاتورة:", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(
-                    text = CalculationEngine.formatCurrency(calc.totalInvoiceAmount, currencySymbol),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = StatusPaidGreen
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("إجمالي المدفوع الصافي:", style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    text = CalculationEngine.formatCurrency(calc.netPaidAmount, currencySymbol),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = EmeraldPrimary
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("المتبقي المستحق:", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                PaymentStatusBadge(paymentStatus = calc.paymentStatus)
-                Text(
-                    text = CalculationEngine.formatCurrency(calc.remainingAmount, currencySymbol),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = if (calc.remainingAmount > 0) StatusUnpaidRed else StatusPaidGreen
                 )
             }
         }
