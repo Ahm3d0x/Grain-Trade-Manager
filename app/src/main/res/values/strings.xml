@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">Grain Trade Manager</string>
+    <string name="app_title_ar">إدارة تجارة الحبوب والغلال</string>
+    <string name="nav_dashboard">الرئيسية</string>
+    <string name="nav_new_purchase">شراء جديد</string>
+    <string name="nav_invoices">الفواتير</string>
+    <string name="nav_customers">العملاء</string>
+    <string name="nav_definitions">التعريفات</string>
+    <string name="nav_settings">الإعدادات</string>
+    <string name="action_new_purchase">عملية شراء جديدة</string>
+    <string name="action_add_weight">وزن جديد</string>
+    <string name="action_add_section">إضافة فاصل / قسم جديد</string>
+    <string name="action_approve_invoice">اعتماد الفاتورة</string>
+    <string name="action_export_pdf">تصدير ومشاركة PDF</string>
+    <string name="action_print_invoice">طباعة الفاتورة</string>
+    <string name="action_record_payment">تسجيل دفعة سداد</string>
+</resources>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Golden wheat & weighing scale emblem in safe zone -->
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M54,24 L58,34 L54,42 L50,34 Z M42,30 L50,36 L48,46 L40,40 Z M66,30 L58,36 L60,46 L68,40 Z M40,44 L48,50 L46,60 L38,54 Z M68,44 L60,50 L62,60 L70,54 Z M52,42 L56,42 L56,74 L72,74 L72,80 L36,80 L36,74 L52,74 Z" />
+    <path
+        android:fillColor="#FEF3C7"
+        android:pathData="M30,58 L44,58 L41,68 L33,68 Z M64,58 L78,58 L75,68 L67,68 Z M34,54 L74,54 L74,57 L34,57 Z" />
+</vector>

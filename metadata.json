@@ -1,0 +1,6 @@
+{
+  "name": "Grain Trade Manager",
+  "description": "تطبيق متكامل لإدارة شراء ووزن الحبوب والغلال وتقسيم الفواتير وحساب المستحقات وإصدار فواتير PDF",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
