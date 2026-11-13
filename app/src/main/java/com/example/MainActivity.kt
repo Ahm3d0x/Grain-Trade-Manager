@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Group
@@ -38,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.screens.CustomersScreen
@@ -45,6 +47,7 @@ import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.DefinitionsAndSettingsScreen
 import com.example.ui.screens.InvoicesScreen
 import com.example.ui.screens.PurchaseWorkspaceScreen
+import com.example.ui.screens.ReportsScreen
 import com.example.ui.theme.EmeraldLight
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.MyApplicationTheme
@@ -107,6 +110,7 @@ fun GrainTradeManagerApp(
             NavItem(AppScreen.PURCHASE_WORKSPACE, "شراء ووزن", Icons.Default.Scale, "nav_purchase"),
             NavItem(AppScreen.INVOICES, "الفواتير", Icons.Default.Description, "nav_invoices"),
             NavItem(AppScreen.CUSTOMERS, "العملاء", Icons.Default.Group, "nav_customers"),
+            NavItem(AppScreen.REPORTS, "التقارير", Icons.Default.Assessment, "nav_reports"),
             NavItem(AppScreen.DEFINITIONS, "التعريفات", Icons.Default.Settings, "nav_definitions")
         )
     }
@@ -140,7 +144,14 @@ fun GrainTradeManagerApp(
                                         contentDescription = item.label
                                     )
                                 },
-                                label = { Text(item.label) },
+                                label = {
+                                    Text(
+                                        text = item.label,
+                                        fontSize = 10.sp,
+                                        softWrap = false,
+                                        maxLines = 1
+                                    )
+                                },
                                 colors = NavigationBarItemDefaults.colors(
                                     selectedIconColor = EmeraldPrimary,
                                     selectedTextColor = EmeraldPrimary,
@@ -174,7 +185,7 @@ fun GrainTradeManagerApp(
                                     }
                                 },
                                 icon = { Icon(item.icon, contentDescription = item.label) },
-                                label = { Text(item.label) },
+                                label = { Text(item.label, softWrap = false, maxLines = 1) },
                                 modifier = Modifier.testTag(item.testTag)
                             )
                         }
@@ -267,6 +278,15 @@ fun GrainTradeManagerApp(
                                 },
                                 onOpenInvoice = viewModel::openExistingInvoiceInWorkspace,
                                 onDeleteInvoice = viewModel::deleteInvoiceById
+                            )
+                        }
+
+                        AppScreen.REPORTS -> {
+                            ReportsScreen(
+                                invoices = allInvoices,
+                                customers = customers,
+                                settings = settings,
+                                onOpenInvoice = viewModel::openExistingInvoiceInWorkspace
                             )
                         }
 

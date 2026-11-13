@@ -489,14 +489,13 @@ object PdfInvoiceExporter {
                 val colLeft = colRight - colWidth
                 val colCenterX = (colLeft + colRight) / 2f
 
-                // 1. Column Header Cell ("العمود X" or "عمود X")
+                // 1. Column Header Cell ("عمود X")
                 val headerCell = RectF(colLeft, y, colRight, y + colBlockHeaderH)
                 c.drawRect(headerCell, tableHeaderBgPaint)
                 c.drawRect(headerCell, borderPaint)
-                val colTitle = if (colsInRow <= 6) "العمود ${group.groupIndex}" else "عمود ${group.groupIndex}"
-                c.drawText(colTitle, colCenterX, y + 14f, boldCenterPaint)
+                c.drawText("عمود ${group.groupIndex}", colCenterX, y + 14f, boldCenterPaint)
 
-                // 2. Five Weight Cells Vertically (Rows 1..5) — WITHOUT "كجم" or grams
+                // 2. Five Weight Cells Vertically (Rows 1..5) — ONLY the weight value (no sequence number, no "كجم")
                 for (rowIdx in 0 until CalculationEngine.GROUP_SIZE) {
                     val rowTop = y + colBlockHeaderH + (rowIdx * weightRowH)
                     val rowBottom = rowTop + weightRowH
@@ -506,30 +505,21 @@ object PdfInvoiceExporter {
 
                     val weightItem = group.weights.getOrNull(rowIdx)
                     if (weightItem != null) {
-                        val txt = if (colsInRow <= 7) {
-                            "(${weightItem.sequenceNumber}) ${CalculationEngine.formatWeight(weightItem.weightKg)}"
-                        } else {
-                            CalculationEngine.formatWeight(weightItem.weightKg)
-                        }
+                        val txt = CalculationEngine.formatWeight(weightItem.weightKg)
                         c.drawText(txt, colCenterX, rowTop + 13f, cellCenterPaint)
                     } else {
                         c.drawText("—", colCenterX, rowTop + 13f, cellCenterPaint)
                     }
                 }
 
-                // 3. Column Total Footer Cell — WITHOUT "كجم" or grams
+                // 3. Column Total Footer Cell — clean total number without "كجم"
                 val sumTop = y + colBlockHeaderH + (5 * weightRowH)
                 val sumBottom = sumTop + colSumFooterH
                 val sumRect = RectF(colLeft, sumTop, colRight, sumBottom)
                 c.drawRect(sumRect, totalCellBgPaint)
                 c.drawRect(sumRect, strongBorderPaint)
-                val sumText = if (colsInRow <= 5) {
-                    "المجموع: ${CalculationEngine.formatWeight(group.groupTotalKg)}"
-                } else {
-                    CalculationEngine.formatWeight(group.groupTotalKg)
-                }
                 c.drawText(
-                    sumText,
+                    CalculationEngine.formatWeight(group.groupTotalKg),
                     colCenterX,
                     sumTop + 15f,
                     boldCenterPaint

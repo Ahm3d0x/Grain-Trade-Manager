@@ -331,6 +331,19 @@ fun DashboardScreen(
                     )
                     QuickNavTile(
                         modifier = Modifier.weight(1f),
+                        title = "التقارير والإحصائيات",
+                        subtitle = "الأصناف والعملاء والمدفوعات",
+                        icon = Icons.Default.Payments,
+                        onClick = { onNavigate(AppScreen.REPORTS) },
+                        testTag = "quick_nav_reports"
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    QuickNavTile(
+                        modifier = Modifier.weight(1f),
                         title = "التعريفات والإعدادات",
                         subtitle = "الحبوب والوحدات والنسخ",
                         icon = Icons.Default.Settings,

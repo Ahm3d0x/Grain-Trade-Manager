@@ -34,6 +34,7 @@ enum class AppScreen(val titleAr: String) {
     PURCHASE_WORKSPACE("عملية شراء"),
     INVOICES("الفواتير والعمليات"),
     CUSTOMERS("إدارة العملاء"),
+    REPORTS("التقارير والإحصائيات"),
     DEFINITIONS("التعريفات والإعدادات")
 }
 
