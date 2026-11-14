@@ -19,6 +19,20 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Scale
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.SystemUpdateAlt
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -26,18 +40,23 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -54,11 +73,17 @@ import com.example.ui.screens.InvoicesScreen
 import com.example.ui.screens.LicenseActivationScreen
 import com.example.ui.screens.PurchaseWorkspaceScreen
 import com.example.ui.screens.ReportsScreen
+import com.example.ui.theme.EmeraldDark
 import com.example.ui.theme.EmeraldLight
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.theme.WheatGold
+import com.example.ui.theme.WheatGoldLight
 import com.example.ui.viewmodel.AppScreen
 import com.example.ui.viewmodel.GrainViewModel
+import com.example.util.AppUpdateInfo
+import com.example.util.AppUpdateManager
+import com.example.util.UpdateCheckResult
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -114,13 +139,127 @@ fun GrainTradeManagerApp(
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val statusMessage by viewModel.statusMessage.collectAsStateWithLifecycle()
 
+    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+    var pendingUpdate by remember {
+        mutableStateOf(
+            AppUpdateManager.getCachedAvailableUpdate(context)?.takeIf {
+                !AppUpdateManager.isUpdateDismissedForSession(context, it.versionCode)
+            }
+        )
+    }
+
+    LaunchedEffect(Unit) {
+        val result = AppUpdateManager.checkForUpdates(context)
+        if (result is UpdateCheckResult.UpdateAvailable) {
+            if (!AppUpdateManager.isUpdateDismissedForSession(context, result.info.versionCode)) {
+                pendingUpdate = result.info
+            }
+        }
+    }
 
     LaunchedEffect(statusMessage) {
         statusMessage?.let { msg ->
             snackbarHostState.showSnackbar(msg)
             viewModel.clearStatusMessage()
         }
+    }
+
+    if (pendingUpdate != null) {
+        val update = pendingUpdate!!
+        AlertDialog(
+            onDismissRequest = {
+                if (!update.isMandatory) {
+                    AppUpdateManager.dismissUpdatePrompt(context, update.versionCode)
+                    pendingUpdate = null
+                }
+            },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.SystemUpdateAlt,
+                    contentDescription = null,
+                    tint = EmeraldPrimary,
+                    modifier = Modifier.size(34.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "تحديث جديد متاح للبرنامج (v${update.versionName})",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = WheatGoldLight,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "الإصدار الحالي لديك: v${AppUpdateManager.currentVersionName} (رقم ${AppUpdateManager.currentVersionCode})",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = EmeraldDark
+                            )
+                            Text(
+                                text = "الإصدار الجديد المتاح: v${update.versionName} (رقم ${update.versionCode})",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = EmeraldPrimary
+                            )
+                        }
+                    }
+
+                    if (update.releaseNotes.isNotBlank()) {
+                        Text(
+                            text = "ما الجديد في هذا التحديث:\n${update.releaseNotes}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            AppUpdateManager.openDownloadUrl(context, update.downloadUrl)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("تنزيل التحديث الجديد الآن", fontWeight = FontWeight.Bold)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            AppUpdateManager.requestUpdateViaWhatsApp(context, update.versionName)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(16.dp), tint = EmeraldPrimary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("طلب رابط التحديث عبر واتساب", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                if (!update.isMandatory) {
+                    TextButton(
+                        onClick = {
+                            AppUpdateManager.dismissUpdatePrompt(context, update.versionCode)
+                            pendingUpdate = null
+                        }
+                    ) {
+                        Text("تذكيري لاحقًا")
+                    }
+                }
+            }
+        )
     }
 
     if (currentScreen != AppScreen.DASHBOARD) {

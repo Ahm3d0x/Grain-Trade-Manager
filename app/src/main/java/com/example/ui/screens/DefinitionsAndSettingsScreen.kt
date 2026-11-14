@@ -47,11 +47,15 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.VpnKey
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -72,6 +76,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -106,6 +111,10 @@ import com.example.ui.theme.StatusUnpaidRed
 import com.example.ui.theme.WheatCardBorder
 import com.example.ui.theme.WheatGold
 import com.example.ui.theme.WheatGoldLight
+import com.example.util.AppUpdateInfo
+import com.example.util.AppUpdateManager
+import com.example.util.UpdateCheckResult
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -1365,6 +1374,12 @@ private fun MerchantDefinitionsTabContentCardOnly(
  */
 @Composable
 private fun AboutAppAndDeveloperTab(context: Context) {
+    val coroutineScope = rememberCoroutineScope()
+    var availableUpdate by remember { mutableStateOf(AppUpdateManager.getCachedAvailableUpdate(context)) }
+    var isCheckingUpdate by remember { mutableStateOf(false) }
+    var updateStatusText by remember { mutableStateOf<String?>(null) }
+    var showUpdateConfigDialog by remember { mutableStateOf(false) }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -1415,7 +1430,7 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                         color = EmeraldLight
                     ) {
                         Text(
-                            text = "Grain Trade Manager ERP • الإصدار 1.0 Enterprise",
+                            text = "Grain Trade Manager ERP • الإصدار ${AppUpdateManager.currentVersionName} (بناء رقم ${AppUpdateManager.currentVersionCode})",
                             style = MaterialTheme.typography.labelLarge,
                             color = EmeraldPrimary,
                             fontWeight = FontWeight.Bold,
@@ -1434,7 +1449,202 @@ private fun AboutAppAndDeveloperTab(context: Context) {
             }
         }
 
-        // 2. Developer Profile Card (المطور الخاص بالبرنامج)
+        // 2. App Update Notification & Download System Card (تحديثات البرنامج والإصدارات الجديدة)
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        width = if (availableUpdate != null) 2.dp else 1.dp,
+                        color = if (availableUpdate != null) WheatGold else WheatCardBorder,
+                        shape = RoundedCornerShape(16.dp)
+                    ),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(CircleShape)
+                                    .background(if (availableUpdate != null) WheatGoldLight else EmeraldLight),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.SystemUpdateAlt,
+                                    contentDescription = null,
+                                    tint = if (availableUpdate != null) WheatGold else EmeraldPrimary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Column {
+                                Text(
+                                    text = "تحديثات البرنامج والإصدارات",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "الإصدار المثبت حاليًا: v${AppUpdateManager.currentVersionName} (Version ${AppUpdateManager.currentVersionCode})",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = if (availableUpdate != null) StatusPartialBg else StatusPaidBg
+                        ) {
+                            Text(
+                                text = if (availableUpdate != null) {
+                                    "تحديث v${availableUpdate!!.versionName} متاح 🔔"
+                                } else {
+                                    "محدّث لأحدث إصدار ✓"
+                                },
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (availableUpdate != null) StatusPartialAmber else StatusPaidGreen,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    if (availableUpdate != null) {
+                        val upd = availableUpdate!!
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = WheatGoldLight.copy(alpha = 0.65f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, WheatGold, RoundedCornerShape(12.dp))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "🎉 يتوفر إصدار جديد للبرنامج: الإصدار ${upd.versionName} (رقم ${upd.versionCode})",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = EmeraldDark
+                                )
+                                if (upd.releaseNotes.isNotBlank()) {
+                                    Text(
+                                        text = "ما الجديد في التحديث:\n${upd.releaseNotes}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                if (upd.downloadUrl.isNotBlank()) {
+                                    Text(
+                                        text = "رابط التحميل: ${upd.downloadUrl}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = EmeraldPrimary
+                                    )
+                                }
+
+                                Button(
+                                    onClick = {
+                                        AppUpdateManager.openDownloadUrl(context, upd.downloadUrl)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "تحميل التحديث الجديد الآن (v${upd.versionName})",
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    updateStatusText?.let { msg ->
+                        Text(
+                            text = msg,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = EmeraldPrimary
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                isCheckingUpdate = true
+                                updateStatusText = null
+                                coroutineScope.launch {
+                                    val result = AppUpdateManager.checkForUpdates(context)
+                                    isCheckingUpdate = false
+                                    when (result) {
+                                        is UpdateCheckResult.UpdateAvailable -> {
+                                            availableUpdate = result.info
+                                            updateStatusText = "تم العثور على تحديث جديد: الإصدار ${result.info.versionName}!"
+                                        }
+                                        is UpdateCheckResult.UpToDate -> {
+                                            availableUpdate = null
+                                            updateStatusText = "أنت تستخدم أحدث إصدار حاليًا (v${result.currentVersionName})."
+                                        }
+                                        is UpdateCheckResult.Error -> {
+                                            updateStatusText = result.message
+                                        }
+                                    }
+                                }
+                            },
+                            enabled = !isCheckingUpdate,
+                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                            modifier = Modifier.weight(1.2f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            if (isCheckingUpdate) {
+                                CircularProgressIndicator(
+                                    color = Color.White,
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("جارِ الفحص...", fontSize = 12.sp)
+                            } else {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("فحص التحديثات الآن", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = { showUpdateConfigDialog = true },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("إعداد رابط التحديث", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Developer Profile Card (المطور الخاص بالبرنامج - واتساب فقط بدون إيميل أو رقم مباشر)
         item {
             Card(
                 modifier = Modifier
@@ -1482,12 +1692,6 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Bold,
                                 color = WheatGold
-                            )
-                            Text(
-                                text = "هاتف وواتساب: 01140409832  |  ah2005211@gmail.com",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = EmeraldDark
                             )
                         }
                     }
@@ -1543,7 +1747,7 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                     ) {
                         Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("التواصل مع مطور البرنامج عبر واتساب (01140409832)")
+                        Text("التواصل مع مطور البرنامج عبر واتساب")
                     }
                 }
             }
@@ -1598,6 +1802,165 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                 }
             }
         }
+    }
+
+    if (showUpdateConfigDialog) {
+        var repoUrlInput by remember { mutableStateOf(AppUpdateManager.getConfiguredUpdateUrl(context)) }
+        var manualVersionCode by remember {
+            mutableStateOf((availableUpdate?.versionCode ?: (AppUpdateManager.currentVersionCode + 1)).toString())
+        }
+        var manualVersionName by remember {
+            mutableStateOf(availableUpdate?.versionName ?: "2.0")
+        }
+        var manualDownloadUrl by remember {
+            mutableStateOf(availableUpdate?.downloadUrl ?: repoUrlInput)
+        }
+        var manualNotes by remember {
+            mutableStateOf(
+                availableUpdate?.releaseNotes
+                    ?: "إصدار جديد (v2.0) يتضمن تحسينات في الأداء والتقارير والطباعة."
+            )
+        }
+
+        AlertDialog(
+            onDismissRequest = { showUpdateConfigDialog = false },
+            title = { Text("إعدادات التحديثات وإشعار الإصدار الجديد") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "1. رابط مستودع GitHub أو ملف version.json للفحص التلقائي:",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = EmeraldPrimary
+                    )
+                    OutlinedTextField(
+                        value = repoUrlInput,
+                        onValueChange = { repoUrlInput = it },
+                        label = { Text("رابط GitHub أو رابط التحديث المباشر") },
+                        placeholder = { Text("https://github.com/username/repo") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    HorizontalDivider(color = WheatCardBorder)
+
+                    Text(
+                        text = "2. إشعار تحديث إصدار جديد (مثل الإصدار 2.0) مع رابط التحميل:",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = EmeraldPrimary
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = manualVersionCode,
+                            onValueChange = { manualVersionCode = it },
+                            label = { Text("رقم البناء (مثال: 2)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = manualVersionName,
+                            onValueChange = { manualVersionName = it },
+                            label = { Text("اسم الإصدار (2.0)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    OutlinedTextField(
+                        value = manualDownloadUrl,
+                        onValueChange = { manualDownloadUrl = it },
+                        label = { Text("رابط تنزيل التحديث المباشر (APK Link)") },
+                        placeholder = { Text("https://github.com/.../GrainTradeManager-release.apk") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = manualNotes,
+                        onValueChange = { manualNotes = it },
+                        label = { Text("ملاحظات ومميزات التحديث الجديد") },
+                        maxLines = 3,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                val code = manualVersionCode.toIntOrNull() ?: (AppUpdateManager.currentVersionCode + 1)
+                                val info = AppUpdateInfo(
+                                    versionCode = code.coerceAtLeast(AppUpdateManager.currentVersionCode + 1),
+                                    versionName = manualVersionName.trim().ifBlank { "2.0" },
+                                    downloadUrl = manualDownloadUrl.trim().ifBlank { repoUrlInput.trim() },
+                                    releaseNotes = manualNotes.trim(),
+                                    isMandatory = false
+                                )
+                                AppUpdateManager.saveAvailableUpdate(context, info)
+                                availableUpdate = info
+                                updateStatusText = "تم تفعيل إشعار التحديث للإصدار v${info.versionName} بنجاح!"
+                                showUpdateConfigDialog = false
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("إظهار إشعار التحديث", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        if (availableUpdate != null) {
+                            TextButton(
+                                onClick = {
+                                    AppUpdateManager.clearCachedUpdate(context)
+                                    availableUpdate = null
+                                    updateStatusText = "تم إخفاء إشعار التحديث."
+                                    showUpdateConfigDialog = false
+                                }
+                            ) {
+                                Text("إلغاء الإشعار", color = StatusUnpaidRed, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        AppUpdateManager.setConfiguredUpdateUrl(context, repoUrlInput.trim())
+                        showUpdateConfigDialog = false
+                        if (repoUrlInput.isNotBlank()) {
+                            isCheckingUpdate = true
+                            coroutineScope.launch {
+                                val res = AppUpdateManager.checkForUpdates(context, repoUrlInput.trim())
+                                isCheckingUpdate = false
+                                when (res) {
+                                    is UpdateCheckResult.UpdateAvailable -> {
+                                        availableUpdate = res.info
+                                        updateStatusText = "تم العثور على تحديث جديد: الإصدار ${res.info.versionName}!"
+                                    }
+                                    is UpdateCheckResult.UpToDate -> {
+                                        availableUpdate = null
+                                        updateStatusText = "البرنامج محدّث لأحدث إصدار (v${res.currentVersionName})."
+                                    }
+                                    is UpdateCheckResult.Error -> {
+                                        updateStatusText = "تم حفظ الرابط. (${res.message})"
+                                    }
+                                }
+                            }
+                        } else {
+                            Toast.makeText(context, "تم حفظ الإعدادات", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
+                ) {
+                    Text("حفظ وفحص")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUpdateConfigDialog = false }) {
+                    Text("إغلاق")
+                }
+            }
+        )
     }
 }
 
