@@ -77,7 +77,12 @@ class MainActivity : ComponentActivity() {
                     LicenseActivationScreen(
                         initialStatus = licenseStatus,
                         onActivationSuccess = { cert ->
-                            licenseStatus = LicenseValidationResult.Valid(cert, daysRemaining = 365)
+                            val refreshed = LicenseManager.checkLicenseStatus(context)
+                            licenseStatus = if (refreshed is LicenseValidationResult.Valid) {
+                                refreshed
+                            } else {
+                                LicenseValidationResult.Valid(cert, daysRemaining = 365)
+                            }
                         }
                     )
                 }
@@ -131,7 +136,7 @@ fun GrainTradeManagerApp(
             NavItem(AppScreen.INVOICES, "الفواتير", Icons.Default.Description, "nav_invoices"),
             NavItem(AppScreen.CUSTOMERS, "العملاء", Icons.Default.Group, "nav_customers"),
             NavItem(AppScreen.REPORTS, "التقارير", Icons.Default.Assessment, "nav_reports"),
-            NavItem(AppScreen.DEFINITIONS, "التعريفات", Icons.Default.Settings, "nav_definitions")
+            NavItem(AppScreen.SETTINGS, "الإعدادات", Icons.Default.Settings, "nav_definitions")
         )
     }
 
@@ -148,7 +153,8 @@ fun GrainTradeManagerApp(
                         containerColor = MaterialTheme.colorScheme.surface
                     ) {
                         navItems.forEach { item ->
-                            val selected = currentScreen == item.screen
+                            val selected = currentScreen == item.screen ||
+                                (item.screen == AppScreen.SETTINGS && currentScreen == AppScreen.DEFINITIONS)
                             NavigationBarItem(
                                 selected = selected,
                                 onClick = {
@@ -194,7 +200,8 @@ fun GrainTradeManagerApp(
                         containerColor = MaterialTheme.colorScheme.surface
                     ) {
                         navItems.forEach { item ->
-                            val selected = currentScreen == item.screen
+                            val selected = currentScreen == item.screen ||
+                                (item.screen == AppScreen.SETTINGS && currentScreen == AppScreen.DEFINITIONS)
                             NavigationRailItem(
                                 selected = selected,
                                 onClick = {
@@ -310,11 +317,15 @@ fun GrainTradeManagerApp(
                             )
                         }
 
-                        AppScreen.DEFINITIONS -> {
+                        AppScreen.DEFINITIONS, AppScreen.SETTINGS -> {
                             DefinitionsAndSettingsScreen(
                                 products = products,
                                 pricingUnits = pricingUnits,
                                 settings = settings,
+                                initialMainSection = if (currentScreen == AppScreen.SETTINGS) 1 else 0,
+                                onMainSectionChanged = { section ->
+                                    viewModel.navigateTo(if (section == 1) AppScreen.SETTINGS else AppScreen.DEFINITIONS)
+                                },
                                 onSaveProduct = viewModel::saveProduct,
                                 onSavePricingUnit = viewModel::savePricingUnit,
                                 onSaveSettings = viewModel::saveAppSettings,

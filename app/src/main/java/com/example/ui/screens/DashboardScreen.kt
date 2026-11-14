@@ -344,11 +344,19 @@ fun DashboardScreen(
                 ) {
                     QuickNavTile(
                         modifier = Modifier.weight(1f),
-                        title = "التعريفات والإعدادات",
-                        subtitle = "الحبوب والوحدات والنسخ",
-                        icon = Icons.Default.Settings,
+                        title = "التعريفات والوحدات",
+                        subtitle = "الحبوب وأوزان الوحدات",
+                        icon = Icons.Default.Grass,
                         onClick = { onNavigate(AppScreen.DEFINITIONS) },
                         testTag = "quick_nav_definitions"
+                    )
+                    QuickNavTile(
+                        modifier = Modifier.weight(1f),
+                        title = "الإعدادات والترخيص",
+                        subtitle = "الترخيص والنسخ وحول المطور",
+                        icon = Icons.Default.Settings,
+                        onClick = { onNavigate(AppScreen.SETTINGS) },
+                        testTag = "quick_nav_settings"
                     )
                 }
             }

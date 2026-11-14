@@ -35,7 +35,8 @@ enum class AppScreen(val titleAr: String) {
     INVOICES("الفواتير والعمليات"),
     CUSTOMERS("إدارة العملاء"),
     REPORTS("التقارير والإحصائيات"),
-    DEFINITIONS("التعريفات والإعدادات")
+    DEFINITIONS("التعريفات والوحدات"),
+    SETTINGS("الإعدادات والترخيص")
 }
 
 enum class DashboardPeriod(val labelAr: String) {
