@@ -24,17 +24,21 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -50,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -68,6 +73,10 @@ import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.StatusUnpaidRed
 import com.example.ui.theme.WheatCardBorder
 import com.example.ui.theme.WheatGold
+
+private const val DEVELOPER_PHONE_LOCAL = "01140409832"
+private const val DEVELOPER_WHATSAPP_INTL = "201140409832"
+private const val DEVELOPER_EMAIL = "ah2005211@gmail.com"
 
 @Composable
 fun LicenseActivationScreen(
@@ -98,14 +107,14 @@ fun LicenseActivationScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(24.dp),
+                .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
             // Header Icon with Gold-Emerald Gradient
             Box(
                 modifier = Modifier
-                    .size(80.dp)
+                    .size(76.dp)
                     .background(
                         brush = Brush.radialGradient(listOf(WheatGold, EmeraldPrimary)),
                         shape = CircleShape
@@ -116,11 +125,11 @@ fun LicenseActivationScreen(
                     imageVector = Icons.Default.Lock,
                     contentDescription = null,
                     tint = Color.White,
-                    modifier = Modifier.size(42.dp)
+                    modifier = Modifier.size(38.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             Text(
                 text = "إدارة تجارة الحبوب والغلال",
@@ -136,7 +145,7 @@ fun LicenseActivationScreen(
                 fontWeight = FontWeight.SemiBold
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
             // Hardware Machine ID Card
             Card(
@@ -195,9 +204,11 @@ fun LicenseActivationScreen(
 
                         Button(
                             onClick = {
-                                val message = "السلام عليكم، أود ترخيص برنامج إدارة تجارة الحبوب والغلال.\nمعرّف الجهاز الخاص بي هو:\n$machineId"
+                                val message = "السلام عليكم باشمهندس أحمد، أود تفعيل وترخيص برنامج إدارة تجارة الحبوب والغلال.\nمعرّف الجهاز الخاص بي هو:\n$machineId"
                                 val intent = Intent(Intent.ACTION_VIEW).apply {
-                                    data = Uri.parse("https://api.whatsapp.com/send?text=" + Uri.encode(message))
+                                    data = Uri.parse(
+                                        "https://wa.me/$DEVELOPER_WHATSAPP_INTL?text=" + Uri.encode(message)
+                                    )
                                 }
                                 try {
                                     context.startActivity(intent)
@@ -205,23 +216,23 @@ fun LicenseActivationScreen(
                                     Toast.makeText(context, "تعذر فتح تطبيق واتساب", Toast.LENGTH_SHORT).show()
                                 }
                             },
-                            modifier = Modifier.weight(1.2f),
+                            modifier = Modifier.weight(1.25f),
                             colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Send,
+                                imageVector = Icons.AutoMirrored.Filled.Send,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "إرسال للتفعيل", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(text = "إرسال عبر واتساب", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // License Key Input
             OutlinedTextField(
@@ -292,7 +303,7 @@ fun LicenseActivationScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
             // Activation Action Button
             Button(
@@ -359,7 +370,172 @@ fun LicenseActivationScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(18.dp))
+
+            // Dedicated Developer Contact Card for First-Time Activation
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, EmeraldPrimary.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(EmeraldLight),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SupportAgent,
+                                contentDescription = null,
+                                tint = EmeraldPrimary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "للتواصل وطلب كود التفعيل والترخيص",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "المهندس / أحمد عطية (Eng. Ahmed Attia)",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = EmeraldPrimary
+                            )
+                            Text(
+                                text = "هاتف وواتساب: $DEVELOPER_PHONE_LOCAL",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = EmeraldDark
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = WheatCardBorder)
+
+                    // Direct Contact Buttons: Call, WhatsApp, Email
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // 1. Direct Phone Call
+                        OutlinedButton(
+                            onClick = {
+                                val callIntent = Intent(Intent.ACTION_DIAL).apply {
+                                    data = Uri.parse("tel:$DEVELOPER_PHONE_LOCAL")
+                                }
+                                try {
+                                    context.startActivity(callIntent)
+                                } catch (_: Exception) {
+                                    Toast.makeText(context, "رقم الهاتف: $DEVELOPER_PHONE_LOCAL", Toast.LENGTH_LONG).show()
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Call,
+                                contentDescription = null,
+                                tint = EmeraldPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "اتصال هاتفي",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                softWrap = false,
+                                maxLines = 1
+                            )
+                        }
+
+                        // 2. Direct WhatsApp Chat
+                        Button(
+                            onClick = {
+                                val message = "السلام عليكم باشمهندس أحمد، أود الحصول على كود تفعيل برنامج إدارة تجارة الحبوب والغلال.\nمعرّف الجهاز (Machine ID):\n$machineId"
+                                val waIntent = Intent(Intent.ACTION_VIEW).apply {
+                                    data = Uri.parse(
+                                        "https://wa.me/$DEVELOPER_WHATSAPP_INTL?text=" + Uri.encode(message)
+                                    )
+                                }
+                                try {
+                                    context.startActivity(waIntent)
+                                } catch (_: Exception) {
+                                    Toast.makeText(context, "واتساب: $DEVELOPER_PHONE_LOCAL", Toast.LENGTH_LONG).show()
+                                }
+                            },
+                            modifier = Modifier.weight(1.15f),
+                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = null,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "تواصل واتساب",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                softWrap = false,
+                                maxLines = 1
+                            )
+                        }
+
+                        // 3. Direct Email
+                        OutlinedButton(
+                            onClick = {
+                                val emailIntent = Intent(Intent.ACTION_SENDTO).apply {
+                                    data = Uri.parse("mailto:$DEVELOPER_EMAIL")
+                                    putExtra(Intent.EXTRA_SUBJECT, "طلب تفعيل برنامج إدارة تجارة الحبوب والغلال")
+                                    putExtra(
+                                        Intent.EXTRA_TEXT,
+                                        "السلام عليكم باشمهندس أحمد،\nأرغب في تفعيل البرنامج.\nمعرّف الجهاز: $machineId"
+                                    )
+                                }
+                                try {
+                                    context.startActivity(emailIntent)
+                                } catch (_: Exception) {
+                                    Toast.makeText(context, DEVELOPER_EMAIL, Toast.LENGTH_LONG).show()
+                                }
+                            },
+                            modifier = Modifier.weight(0.95f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Email,
+                                contentDescription = null,
+                                tint = WheatGold,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "إيميل",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                softWrap = false,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Notice / Guarantee
             Text(
@@ -371,10 +547,10 @@ fun LicenseActivationScreen(
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             Text(
-                text = "UltraSoft Authority Engine • Eng. Ahmed Attia",
+                text = "UltraSoft Authority Engine • Eng. Ahmed Attia ($DEVELOPER_PHONE_LOCAL)",
                 fontSize = 10.sp,
                 color = WheatGold,
                 fontWeight = FontWeight.Bold,

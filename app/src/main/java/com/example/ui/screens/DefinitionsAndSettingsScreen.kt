@@ -1483,6 +1483,12 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                                 fontWeight = FontWeight.Bold,
                                 color = WheatGold
                             )
+                            Text(
+                                text = "هاتف وواتساب: 01140409832  |  ah2005211@gmail.com",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = EmeraldDark
+                            )
                         }
                     }
 
@@ -1523,7 +1529,7 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                         onClick = {
                             val msg = "السلام عليكم باشمهندس أحمد، بخصوص برنامج إدارة تجارة الحبوب والغلال (Grain Trade Manager)"
                             val intent = Intent(Intent.ACTION_VIEW).apply {
-                                data = Uri.parse("https://api.whatsapp.com/send?text=" + Uri.encode(msg))
+                                data = Uri.parse("https://wa.me/201140409832?text=" + Uri.encode(msg))
                             }
                             try {
                                 context.startActivity(intent)
@@ -1537,7 +1543,7 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                     ) {
                         Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("التواصل مع مطور البرنامج عبر واتساب")
+                        Text("التواصل مع مطور البرنامج عبر واتساب (01140409832)")
                     }
                 }
             }
