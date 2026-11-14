@@ -42,10 +42,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import com.example.security.LicenseManager
+import com.example.security.LicenseValidationResult
 import com.example.ui.screens.CustomersScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.DefinitionsAndSettingsScreen
 import com.example.ui.screens.InvoicesScreen
+import com.example.ui.screens.LicenseActivationScreen
 import com.example.ui.screens.PurchaseWorkspaceScreen
 import com.example.ui.screens.ReportsScreen
 import com.example.ui.theme.EmeraldLight
@@ -60,7 +66,21 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
-                GrainTradeManagerApp()
+                val context = LocalContext.current
+                var licenseStatus by remember {
+                    mutableStateOf(LicenseManager.checkLicenseStatus(context))
+                }
+
+                if (licenseStatus is LicenseValidationResult.Valid) {
+                    GrainTradeManagerApp()
+                } else {
+                    LicenseActivationScreen(
+                        initialStatus = licenseStatus,
+                        onActivationSuccess = { cert ->
+                            licenseStatus = LicenseValidationResult.Valid(cert, daysRemaining = 365)
+                        }
+                    )
+                }
             }
         }
     }

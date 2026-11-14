@@ -22,10 +22,16 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.VpnKey
+import com.example.security.HardwareIdProvider
+import com.example.security.LicenseManager
+import com.example.security.LicenseValidationResult
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -472,6 +478,161 @@ fun DefinitionsAndSettingsScreen(
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    item {
+                        var showUpdateLicenseDialog by remember { mutableStateOf(false) }
+                        var licenseResult by remember { mutableStateOf(LicenseManager.checkLicenseStatus(context)) }
+                        val currentMachineId = remember { HardwareIdProvider.getHardwareId(context) }
+
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, WheatCardBorder, RoundedCornerShape(16.dp)),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "الترخيص والحماية الرقمية",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.VerifiedUser,
+                                            contentDescription = null,
+                                            tint = if (licenseResult is LicenseValidationResult.Valid) EmeraldPrimary else StatusUnpaidRed,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = if (licenseResult is LicenseValidationResult.Valid) "مرخص رسمي 🟢" else "غير مفعل 🔴",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (licenseResult is LicenseValidationResult.Valid) EmeraldPrimary else StatusUnpaidRed
+                                        )
+                                    }
+                                }
+
+                                if (licenseResult is LicenseValidationResult.Valid) {
+                                    val validResult = licenseResult as LicenseValidationResult.Valid
+                                    val payload = validResult.certificate.payload
+                                    Text(
+                                        text = "العميل المرخص له: ${payload.clientName}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "فئة الترخيص: ${payload.tier} Edition",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = if (payload.isLifetime) "صلاحية الترخيص: مدى الحياة (Lifetime ♾️)" else "تاريخ الانتهاء: ${payload.expiresAt.take(10)} (${validResult.daysRemaining} يوم متبقي)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = EmeraldPrimary,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "معرّف الجهاز: $currentMachineId",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    IconButton(
+                                        onClick = {
+                                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                            val clip = android.content.ClipData.newPlainText("Machine ID", currentMachineId)
+                                            clipboard.setPrimaryClip(clip)
+                                            android.widget.Toast.makeText(context, "تم نسخ معرّف الجهاز", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentCopy,
+                                            contentDescription = "نسخ معرّف الجهاز",
+                                            modifier = Modifier.size(18.dp),
+                                            tint = EmeraldPrimary
+                                        )
+                                    }
+                                }
+
+                                OutlinedButton(
+                                    onClick = { showUpdateLicenseDialog = true },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Icon(Icons.Default.VpnKey, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("تحديث أو إدخال كود ترخيص جديد")
+                                }
+                            }
+                        }
+
+                        if (showUpdateLicenseDialog) {
+                            var newKeyInput by remember { mutableStateOf("") }
+                            var updateErr by remember { mutableStateOf<String?>(null) }
+
+                            AlertDialog(
+                                onDismissRequest = { showUpdateLicenseDialog = false },
+                                title = { Text("تحديث أو تجديد كود الترخيص") },
+                                text = {
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(
+                                            text = "الصق كود الترخيص الصادر من سلطة إصدار التراخيص:",
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                        OutlinedTextField(
+                                            value = newKeyInput,
+                                            onValueChange = { newKeyInput = it; updateErr = null },
+                                            placeholder = { Text("GTM6-eyJoZWFkZXIi...") },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            maxLines = 4
+                                        )
+                                        updateErr?.let {
+                                            Text(it, color = StatusUnpaidRed, style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                },
+                                confirmButton = {
+                                    Button(
+                                        onClick = {
+                                            val res = LicenseManager.activateLicense(context, newKeyInput.trim())
+                                            if (res is LicenseValidationResult.Valid) {
+                                                android.widget.Toast.makeText(context, "تم تحديث الترخيص بنجاح!", android.widget.Toast.LENGTH_LONG).show()
+                                                licenseResult = res
+                                                showUpdateLicenseDialog = false
+                                            } else {
+                                                updateErr = "كود الترخيص غير صالح أو غير مخصص لهذا الجهاز"
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
+                                    ) {
+                                        Text("تفعيل")
+                                    }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { showUpdateLicenseDialog = false }) {
+                                        Text("إلغاء")
+                                    }
+                                }
+                            )
                         }
                     }
                 }
