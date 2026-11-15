@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -56,11 +57,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.security.HardwareIdProvider
 import com.example.security.LicenseCertificate
 import com.example.security.LicenseManager
@@ -386,16 +389,17 @@ fun LicenseActivationScreen(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(38.dp)
-                                .clip(CircleShape)
-                                .background(EmeraldLight),
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color.White)
+                                .border(1.dp, WheatCardBorder, RoundedCornerShape(10.dp))
+                                .padding(5.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.SupportAgent,
-                                contentDescription = null,
-                                tint = EmeraldPrimary,
-                                modifier = Modifier.size(22.dp)
+                            Image(
+                                painter = painterResource(id = R.drawable.ultrasoft_logo),
+                                contentDescription = "UltraSoft Logo",
+                                modifier = Modifier.fillMaxSize()
                             )
                         }
                         Column(modifier = Modifier.weight(1f)) {
@@ -406,13 +410,13 @@ fun LicenseActivationScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Eng. Ahmed Mohamed Attia",
-                                fontSize = 15.sp,
+                                text = "تطوير: Eng. Ahmed Mohamed Attia",
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = EmeraldPrimary
                             )
                             Text(
-                                text = "Founder & CEO of UltraSoft",
+                                text = "هذا البرنامج تحت مظلة شركة UltraSoft",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = WheatGold
@@ -425,7 +429,7 @@ fun LicenseActivationScreen(
                     // Direct WhatsApp Contact Button ONLY
                     Button(
                         onClick = {
-                            val message = "السلام عليكم Eng. Ahmed Mohamed Attia، أود الحصول على كود تفعيل برنامج إدارة تجارة الحبوب والغلال (UltraSoft).\nمعرّف الجهاز (Machine ID):\n$machineId"
+                            val message = "السلام عليكم Eng. Ahmed Mohamed Attia، أود الحصول على كود تفعيل البرنامج (UltraSoft).\nمعرّف الجهاز (Machine ID):\n$machineId"
                             val waIntent = Intent(Intent.ACTION_VIEW).apply {
                                 data = Uri.parse(
                                     "https://wa.me/$DEVELOPER_WHATSAPP_INTL?text=" + Uri.encode(message)
@@ -473,7 +477,7 @@ fun LicenseActivationScreen(
             Spacer(modifier = Modifier.height(6.dp))
 
             Text(
-                text = "Powered by UltraSoft • Founded by Eng. Ahmed Mohamed Attia",
+                text = "UltraSoft • Developed by Eng. Ahmed Mohamed Attia",
                 fontSize = 10.sp,
                 color = WheatGold,
                 fontWeight = FontWeight.Bold,

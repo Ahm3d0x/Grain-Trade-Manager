@@ -8,6 +8,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -86,12 +87,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.data.local.AppSettingsEntity
 import com.example.data.local.PricingUnitEntity
 import com.example.data.local.ProductEntity
@@ -1506,7 +1509,7 @@ private fun AboutAppAndDeveloperTab(context: Context) {
             }
         }
 
-        // 3. Developer & UltraSoft Company Card (Eng. Ahmed Mohamed Attia — Founder & CEO of UltraSoft)
+        // 3. Developer & UltraSoft Company Card (With Official UltraSoft Logo)
         item {
             Card(
                 modifier = Modifier
@@ -1517,55 +1520,49 @@ private fun AboutAppAndDeveloperTab(context: Context) {
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(EmeraldLight),
+                                .size(58.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color.White)
+                                .border(1.dp, WheatCardBorder, RoundedCornerShape(14.dp))
+                                .padding(6.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Code,
-                                contentDescription = null,
-                                tint = EmeraldPrimary,
-                                modifier = Modifier.size(25.dp)
+                            Image(
+                                painter = painterResource(id = R.drawable.ultrasoft_logo),
+                                contentDescription = "UltraSoft Logo",
+                                modifier = Modifier.fillMaxSize()
                             )
                         }
-                        Column {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(
-                                text = "Founder, CEO & Lead Software Engineer",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                text = "UltraSoft",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = WheatGold
                             )
                             Text(
-                                text = "Eng. Ahmed Mohamed Attia",
-                                style = MaterialTheme.typography.titleMedium,
+                                text = "تطوير: Eng. Ahmed Mohamed Attia",
+                                style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = EmeraldPrimary
                             )
                             Text(
-                                text = "UltraSoft Software & Enterprise Solutions",
+                                text = "هذا البرنامج تحت مظلة شركة UltraSoft",
                                 style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.Bold,
-                                color = WheatGold
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
 
                     HorizontalDivider(color = WheatCardBorder)
-
-                    Text(
-                        text = "هذا البرنامج أحد منتجات شركة UltraSoft للبرمجيات وحلول الأعمال الرقمية، والتي أسسها ويديرها المهندس أحمد محمد عطية (Eng. Ahmed Mohamed Attia)، حيث تندرج كافة البرامج والأنظمة المحاسبية والإدارية المصممة تحت مظلة UltraSoft.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 19.sp
-                    )
 
                     Surface(
                         shape = RoundedCornerShape(10.dp),
@@ -1577,13 +1574,13 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
-                                text = "• جميع حقوق الملكية الفكرية والتطوير محفوظة لشركة UltraSoft.",
+                                text = "• هذا البرنامج تحت مظلة شركة UltraSoft.",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = EmeraldDark
                             )
                             Text(
-                                text = "• Designed & Engineered by Eng. Ahmed Mohamed Attia (Founder & CEO of UltraSoft).",
+                                text = "• Developed by Eng. Ahmed Mohamed Attia.",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = EmeraldDark
@@ -1615,13 +1612,13 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                     ) {
                         Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("التواصل مع المطور (UltraSoft) عبر واتساب")
+                        Text("التواصل مع المطور عبر واتساب")
                     }
                 }
             }
         }
 
-        // 4. Key System Capabilities Summary
+        // 4. Comprehensive, Organized System Capabilities & Features
         item {
             Card(
                 modifier = Modifier
@@ -1632,39 +1629,82 @@ private fun AboutAppAndDeveloperTab(context: Context) {
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "أبرز إمكانيات ومميزات النظام",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
+                        text = "مميزات وإمكانيات البرنامج بالتفصيل",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = EmeraldPrimary
                     )
 
-                    val features = listOf(
-                        "التجميع الخماسي الآلي للأوزان في أعمدة منظمة بدون أخطاء يدوية",
-                        "تقسيم الفاتورة الواحدة إلى عدة أقسام مستقلة بنوع حبوب وسعر مختلف",
-                        "حفظ تلقائي مستمر للبيانات وميزة تعليق الفواتير واستئنافها",
-                        "تصدير وحفظ الفواتير باسم العميل ونوع الحبوب والتاريخ تلقائيًا",
-                        "تقارير وإحصائيات شاملة للأصناف والعملاء والحركة اليومية والمدفوعات",
-                        "العمل الكامل بدون إنترنت (Offline-First) مع النسخ الاحتياطي والاستعادة"
+                    val featureGroups = listOf(
+                        "1. نظام الوزن والتجميع الخماسي الآلي" to listOf(
+                            "لوحة أرقام سريعة مصممة لإدخال الأوزان المتتالية بيد واحدة مع وضع زر (+ إضافة) في أقرب مكان للأصابع.",
+                            "تجميع تلقائي لكل 5 أوزان (5 شكاير) في عمود مستقل مع حساب مجموع كل عمود والوزن الصافي الكلي بالكيلوجرام فورًا.",
+                            "إمكانية تعديل أو حذف أي وزنة داخل أي عمود في أي وقت مع إعادة الحساب الآلي لكافة المجاميع."
+                        ),
+                        "2. إدارة الفواتير والأقسام المتعددة والتعليق" to listOf(
+                            "تقسيم الفاتورة الواحدة إلى عدة أقسام مستقلة (مثل قسم قمح، قسم ذرة، قسم فول) لكل قسم وحدة تسعير وسعر خاص به.",
+                            "حفظ تلقائي لحظي للفاتورة والأوزان أثناء التسجيل بحيث لا تضيع أي بيانات في حال الخروج من البرنامج أو انغلاقه.",
+                            "ميزة تعليق الفاتورة الحالية وبدء فاتورة جديدة لعميل آخر، مع إمكانية التبديل بين الفواتير المعلقة واستكمالها.",
+                            "تفريغ تلقائي لشاشة الوزن بعد الضغط على حفظ واعتماد الفاتورة لتكون جاهزة لاستقبال فاتورة جديدة فورًا."
+                        ),
+                        "3. الطباعة الاحترافية وتصدير الـ PDF والواتساب" to listOf(
+                            "تصميم فاتورة A4 رسمية تستوعب حتى 10 أعمدة أوزان جنبًا إلى جنب في الصف الواحد، مع توزيع متساوٍ لعرض الأعمدة.",
+                            "ترويسة فاتحة متوافقة تمامًا مع طابعات الأبيض والأسود والليزر، مع حماية الجداول من الانقسام بين الصفحات.",
+                            "تسمية ملف الفاتورة تلقائيًا باسم: (اسم العميل - نوع الحبوب - التاريخ).",
+                            "حفظ الفاتورة مباشرة على الهاتف في مجلد التنزيلات أو إرسالها مباشرة عبر واتساب أو طباعتها بضغطة واحدة."
+                        ),
+                        "4. إدارة العملاء وكشوف الحساب والمدفوعات" to listOf(
+                            "حسابات دقيقة بالأرقام الصحيحة (بالكيلوجرام الصافي وبدون قروش أو كسور عشرية مزعجة).",
+                            "سجل متكامل لكل عميل يعرض جميع الفواتير التي أخذها، وإجمالي الأوزان، والمبالغ المستحقة، والمدفوعات، والمتبقي.",
+                            "القدرة على فتح أي فاتورة من سجل العميل لتعديلها أو طباعتها أو إرسالها عبر واتساب أو حذفها مع تأكيد الحذف.",
+                            "تسجيل دفعات السداد الكلي أو الجزئي (نقدي، تحويل بنكي، محفظة إلكترونية، شيك) وتسوية الفروق."
+                        ),
+                        "5. التقارير والإحصائيات الشاملة" to listOf(
+                            "تقارير مفصلة حسب الفترة الزمنية (اليوم، الأسبوع، الشهر، السنة، أو كل الفترات).",
+                            "إحصائيات الأوزان وقيم المشتريات لكل صنف حبوب على حدة، وتقارير أرصدة العملاء، وسجل حركة المدفوعات."
+                        ),
+                        "6. التعريفات والنسخ الاحتياطي والتحديثات" to listOf(
+                            "مرونة كاملة في تعريف أنواع الحبوب ووحدات التسعير وأوزانها القياسية (أردب، طن، قنطار، كيلو) وبيانات المكتب.",
+                            "العمل الكامل بدون إنترنت (Offline-First) مع تصدير واستعادة نسخة احتياطية شاملة لقاعدة البيانات.",
+                            "نظام إشعارات تلقائي ينبه المستخدم فور نزول تحديث جديد للبرنامج مع رابط مباشر لتنزيل الإصدار الأحدث."
+                        )
                     )
 
-                    features.forEach { feat ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = EmeraldPrimary,
-                                modifier = Modifier.size(16.dp)
-                            )
+                    featureGroups.forEachIndexed { idx, (groupTitle, itemsList) ->
+                        if (idx > 0) {
+                            HorizontalDivider(color = WheatCardBorder.copy(alpha = 0.6f))
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(
-                                text = feat,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface
+                                text = groupTitle,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = EmeraldDark
                             )
+                            itemsList.forEach { feat ->
+                                Row(
+                                    verticalAlignment = Alignment.Top,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = EmeraldPrimary,
+                                        modifier = Modifier
+                                            .padding(top = 2.dp)
+                                            .size(15.dp)
+                                    )
+                                    Text(
+                                        text = feat,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        lineHeight = 18.sp
+                                    )
+                                }
+                            }
                         }
                     }
                 }
