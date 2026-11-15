@@ -131,8 +131,8 @@ fun LicenseActivationScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             Text(
-                text = "إدارة تجارة الحبوب والغلال",
-                fontSize = 22.sp,
+                text = "احسبلي",
+                fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
@@ -203,7 +203,7 @@ fun LicenseActivationScreen(
 
                         Button(
                             onClick = {
-                                val message = "السلام عليكم باشمهندس أحمد، أود تفعيل وترخيص برنامج إدارة تجارة الحبوب والغلال.\nمعرّف الجهاز الخاص بي هو:\n$machineId"
+                                val message = "السلام عليكم باشمهندس أحمد، أود تفعيل وترخيص برنامج احسبلي.\nمعرّف الجهاز الخاص بي هو:\n$machineId"
                                 val intent = Intent(Intent.ACTION_VIEW).apply {
                                     data = Uri.parse(
                                         "https://wa.me/$DEVELOPER_WHATSAPP_INTL?text=" + Uri.encode(message)

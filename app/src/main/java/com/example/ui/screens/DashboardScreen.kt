@@ -144,12 +144,12 @@ fun DashboardScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Grain Trade Manager",
+                                    text = "UltraSoft • احسبلي",
                                     style = MaterialTheme.typography.labelLarge,
                                     color = WheatGoldLight
                                 )
                                 Text(
-                                    text = settings.merchantName.ifBlank { "إدارة تجارة الحبوب والغلال" },
+                                    text = settings.merchantName.ifBlank { "احسبلي" },
                                     style = MaterialTheme.typography.titleLarge,
                                     color = Color.White,
                                     maxLines = 1,

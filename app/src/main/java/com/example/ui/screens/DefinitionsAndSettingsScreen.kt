@@ -10,6 +10,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -1289,25 +1290,22 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(68.dp)
-                            .background(
-                                brush = Brush.radialGradient(listOf(WheatGold, EmeraldPrimary)),
-                                shape = CircleShape
-                            ),
-                        contentAlignment = Alignment.Center
+                    Surface(
+                        modifier = Modifier.size(84.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        color = Color(0xFF083926),
+                        shadowElevation = 4.dp
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Scale,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(34.dp)
+                        Image(
+                            painter = painterResource(id = R.drawable.ehsebly_app_icon_fg_1794758461550),
+                            contentDescription = "أيقونة برنامج احسبلي",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
 
                     Text(
-                        text = "برنامج إدارة تجارة الحبوب والغلال",
+                        text = "برنامج احسبلي",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center
@@ -1596,7 +1594,7 @@ private fun AboutAppAndDeveloperTab(context: Context) {
 
                     Button(
                         onClick = {
-                            val msg = "السلام عليكم Eng. Ahmed Mohamed Attia، بخصوص برنامج إدارة تجارة الحبوب والغلال (UltraSoft)"
+                            val msg = "السلام عليكم Eng. Ahmed Mohamed Attia، بخصوص برنامج احسبلي (UltraSoft)"
                             val intent = Intent(Intent.ACTION_VIEW).apply {
                                 data = Uri.parse("https://wa.me/201140409832?text=" + Uri.encode(msg))
                             }

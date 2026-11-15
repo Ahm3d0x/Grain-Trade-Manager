@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Grain Trade Manager"
+rootProject.name = "احسبلي"
 
 include(":app")

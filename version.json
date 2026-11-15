@@ -1,7 +1,7 @@
 {
-  "versionCode": 1,
-  "versionName": "1.0",
+  "versionCode": 2,
+  "versionName": "2.0",
   "downloadUrl": "https://github.com/Ahm3d0x/Grain-Trade-Manager/raw/main/GrainTradeManager-release.apk",
-  "releaseNotes": "الإصدار 1.0 المعتمد لبرنامج إدارة تجارة الحبوب والغلال.",
+  "releaseNotes": "الإصدار 2.0 الجديد كليًا من برنامج (احسبلي - UltraSoft):\n• تغيير اسم وهوية البرنامج إلى (احسبلي) مع أيقونة جديدة تدمج شعار UltraSoft والحسابات وتجارة الحبوب.\n• إمكانية حفظ الفواتير مباشرة على الهاتف أو إرسالها عبر واتساب باسم (العميل - نوع الحبوب - التاريخ).\n• تحديث صفحة عن البرنامج والمطور (Eng. Ahmed Mohamed Attia - UltraSoft) وعرض كافة مميزات النظام بالتفصيل.",
   "isMandatory": false
 }

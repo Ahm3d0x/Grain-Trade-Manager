@@ -73,7 +73,7 @@ object AppUpdateManager {
             .ifEmpty { OFFICIAL_APK_DOWNLOAD_URL }
         val releaseNotes = prefs.getString(
             KEY_CACHED_RELEASE_NOTES,
-            "يتوفر إصدار جديد من برنامج إدارة تجارة الحبوب والغلال يتضمن تحسينات ومميزات جديدة."
+            "يتوفر إصدار جديد من برنامج احسبلي يتضمن تحسينات ومميزات جديدة."
         ) ?: ""
         val isMandatory = prefs.getBoolean(KEY_CACHED_MANDATORY, false)
 
@@ -235,7 +235,7 @@ object AppUpdateManager {
 
     fun requestUpdateViaWhatsApp(context: Context, targetVersionName: String) {
         val verText = if (targetVersionName.isNotBlank()) "الإصدار $targetVersionName" else "أحدث إصدار"
-        val msg = "السلام عليكم باشمهندس أحمد، أود الحصول على رابط تحميل التحديث الجديد ($verText) لبرنامج إدارة تجارة الحبوب والغلال.\nالإصدار الحالي لدي: v$currentVersionName"
+        val msg = "السلام عليكم باشمهندس أحمد، أود الحصول على رابط تحميل التحديث الجديد ($verText) لبرنامج احسبلي.\nالإصدار الحالي لدي: v$currentVersionName"
         try {
             val intent = Intent(
                 Intent.ACTION_VIEW,
