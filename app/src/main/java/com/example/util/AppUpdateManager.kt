@@ -37,22 +37,26 @@ object AppUpdateManager {
     private const val KEY_CACHED_MANDATORY = "cached_mandatory"
     private const val KEY_DISMISSED_VERSION_CODE = "dismissed_version_code"
 
+    const val OFFICIAL_GITHUB_REPO = "https://github.com/Ahm3d0x/Grain-Trade-Manager"
+    const val OFFICIAL_APK_DOWNLOAD_URL =
+        "https://github.com/Ahm3d0x/Grain-Trade-Manager/raw/main/GrainTradeManager-release.apk"
     private const val WHATSAPP_INTL = "201140409832"
 
     val currentVersionCode: Int
         get() = BuildConfig.VERSION_CODE
 
-    val currentVersionName: String
+    val currentVersionName: IntOrStringVersion
         get() = BuildConfig.VERSION_NAME
 
     fun getConfiguredUpdateUrl(context: Context): String {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getString(KEY_REPO_OR_MANIFEST_URL, "")?.trim() ?: ""
+        val saved = prefs.getString(KEY_REPO_OR_MANIFEST_URL, "")?.trim() ?: ""
+        return saved.ifEmpty { OFFICIAL_GITHUB_REPO }
     }
 
     fun setConfiguredUpdateUrl(context: Context, url: String) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putString(KEY_REPO_OR_MANIFEST_URL, url.trim()).apply()
+        prefs.edit().putString(KEY_REPO_OR_MANIFEST_URL, url.trim().ifEmpty { OFFICIAL_GITHUB_REPO }).apply()
     }
 
     /**
@@ -65,7 +69,8 @@ object AppUpdateManager {
             return null
         }
         val versionName = prefs.getString(KEY_CACHED_VERSION_NAME, "$cachedCode.0") ?: "$cachedCode.0"
-        val downloadUrl = prefs.getString(KEY_CACHED_DOWNLOAD_URL, "") ?: ""
+        val downloadUrl = (prefs.getString(KEY_CACHED_DOWNLOAD_URL, "") ?: "")
+            .ifEmpty { OFFICIAL_APK_DOWNLOAD_URL }
         val releaseNotes = prefs.getString(
             KEY_CACHED_RELEASE_NOTES,
             "يتوفر إصدار جديد من برنامج إدارة تجارة الحبوب والغلال يتضمن تحسينات ومميزات جديدة."
@@ -86,7 +91,7 @@ object AppUpdateManager {
         prefs.edit()
             .putInt(KEY_CACHED_VERSION_CODE, info.versionCode)
             .putString(KEY_CACHED_VERSION_NAME, info.versionName)
-            .putString(KEY_CACHED_DOWNLOAD_URL, info.downloadUrl)
+            .putString(KEY_CACHED_DOWNLOAD_URL, info.downloadUrl.ifBlank { OFFICIAL_APK_DOWNLOAD_URL })
             .putString(KEY_CACHED_RELEASE_NOTES, info.releaseNotes)
             .putBoolean(KEY_CACHED_MANDATORY, info.isMandatory)
             .remove(KEY_DISMISSED_VERSION_CODE)
@@ -116,20 +121,17 @@ object AppUpdateManager {
     }
 
     /**
-     * Converts a standard GitHub repo URL (e.g. https://github.com/user/repo)
+     * Converts a standard GitHub repo URL (e.g. https://github.com/Ahm3d0x/Grain-Trade-Manager)
      * or raw URL into candidate raw `version.json` URLs and default APK download URL.
      */
     private fun resolveCandidateManifestUrls(rawInput: String): Pair<List<String>, String> {
-        val cleaned = rawInput.trim().removeSuffix("/")
-        if (cleaned.isEmpty()) return emptyList<String>() to ""
+        val cleaned = rawInput.trim().removeSuffix("/").ifEmpty { OFFICIAL_GITHUB_REPO }
 
-        // If user already passed a direct .json URL
         if (cleaned.endsWith(".json", ignoreCase = true)) {
             val defaultApk = cleaned.substringBeforeLast("/") + "/GrainTradeManager-release.apk"
             return listOf(cleaned) to defaultApk
         }
 
-        // If user passed https://github.com/owner/repo
         val githubRegex = Regex("""https?://github\.com/([^/]+)/([^/]+).*""", RegexOption.IGNORE_CASE)
         val match = githubRegex.matchEntire(cleaned)
         if (match != null) {
@@ -141,26 +143,20 @@ object AppUpdateManager {
             return listOf(mainManifest, masterManifest) to defaultApk
         }
 
-        return listOf(cleaned) to cleaned
+        return listOf(
+            "https://raw.githubusercontent.com/Ahm3d0x/Grain-Trade-Manager/main/version.json",
+            "https://raw.githubusercontent.com/Ahm3d0x/Grain-Trade-Manager/master/version.json"
+        ) to OFFICIAL_APK_DOWNLOAD_URL
     }
 
     /**
-     * Checks the remote `version.json` over HTTP/HTTPS on Dispatchers.IO.
+     * Checks the remote `version.json` on GitHub (Ahm3d0x/Grain-Trade-Manager) over HTTPS.
      */
     suspend fun checkForUpdates(context: Context, customUrl: String? = null): UpdateCheckResult =
         withContext(Dispatchers.IO) {
-            val configured = (customUrl ?: getConfiguredUpdateUrl(context)).trim()
-            if (configured.isEmpty()) {
-                val cached = getCachedAvailableUpdate(context)
-                return@withContext if (cached != null) {
-                    UpdateCheckResult.UpdateAvailable(cached)
-                } else {
-                    UpdateCheckResult.Error("لم يتم ضبط رابط مستودع التحديثات (GitHub) بعد. يمكنك إضافته من إعدادات التحديث.")
-                }
-            }
-
+            val configured = (customUrl ?: getConfiguredUpdateUrl(context)).trim().ifEmpty { OFFICIAL_GITHUB_REPO }
             val (candidateUrls, fallbackApkUrl) = resolveCandidateManifestUrls(configured)
-            var lastError = "تعذر الاتصال بخادم التحديثات"
+            var lastError = "تعذر الاتصال بخادم التحديثات، يرجى التأكد من الاتصال بالإنترنت"
 
             for (manifestUrl in candidateUrls) {
                 try {
@@ -209,15 +205,14 @@ object AppUpdateManager {
                             )
                         }
                     } else {
-                        lastError = "لم يتم العثور على ملف التحديث (HTTP $code)"
+                        lastError = "أنت تستخدم أحدث إصدار حاليًا (v$currentVersionName)"
                         conn.disconnect()
                     }
-                } catch (e: Exception) {
-                    lastError = "تعذر التحقق من التحديثات: تأكد من الاتصال بالإنترنت أو صحة الرابط"
+                } catch (_: Exception) {
+                    lastError = "تعذر التحقق من التحديثات: تأكد من الاتصال بالإنترنت"
                 }
             }
 
-            // Fallback to cached update if available
             val cached = getCachedAvailableUpdate(context)
             if (cached != null) {
                 UpdateCheckResult.UpdateAvailable(cached)
@@ -227,11 +222,7 @@ object AppUpdateManager {
         }
 
     fun openDownloadUrl(context: Context, downloadUrl: String) {
-        val cleanUrl = downloadUrl.trim()
-        if (cleanUrl.isEmpty()) {
-            requestUpdateViaWhatsApp(context, "")
-            return
-        }
+        val cleanUrl = downloadUrl.trim().ifEmpty { OFFICIAL_APK_DOWNLOAD_URL }
         try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(cleanUrl)).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -256,3 +247,5 @@ object AppUpdateManager {
         }
     }
 }
+
+private typealias IntOrStringVersion = String

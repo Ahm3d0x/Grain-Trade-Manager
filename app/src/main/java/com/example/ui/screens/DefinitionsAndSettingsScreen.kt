@@ -498,8 +498,6 @@ fun DefinitionsAndSettingsScreen(
 
                 1 -> {
                     BackupAndRestoreSettingsTab(
-                        settings = settings,
-                        onSaveSettings = onSaveSettings,
                         onExportClick = {
                             onExportBackup { json ->
                                 pendingBackupJson = json
@@ -879,9 +877,10 @@ private fun LicenseDetailsSettingsTab(context: Context) {
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "UltraSoft Authority Engine • Ed25519",
+                                    text = "UltraSoft • Eng. Ahmed Mohamed Attia",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    fontWeight = FontWeight.Bold,
+                                    color = EmeraldPrimary
                                 )
                             }
                         }
@@ -1000,12 +999,13 @@ private fun LicenseDetailsSettingsTab(context: Context) {
                             highlight = true
                         )
                         LicenseInfoRow(
-                            label = "سعة الترخيص (المستخدمين / الفروع):",
-                            value = "حتى ${payload.maxUsers} مستخدم • ${payload.maxBranches} فرع"
-                        )
-                        LicenseInfoRow(
                             label = "المميزات المفعلة:",
                             value = if (payload.features.contains("all")) "جميع المميزات والتقارير والـ PDF مفعلة بالكامل" else payload.features.joinToString("، ")
+                        )
+                        LicenseInfoRow(
+                            label = "الشركة المالكة والمطورة للنظام:",
+                            value = "UltraSoft (Eng. Ahmed Mohamed Attia)",
+                            highlight = true
                         )
                         LicenseInfoRow(
                             label = "التوقيع الرقمي وإصدار الحماية:",
@@ -1169,12 +1169,10 @@ private fun LicenseInfoRow(
 }
 
 /**
- * Settings Sub-Tab 1: Backup & Restore + Quick Office Info
+ * Settings Sub-Tab 1: Backup & Restore ONLY (Merchant info is in Definitions tab)
  */
 @Composable
 private fun BackupAndRestoreSettingsTab(
-    settings: AppSettingsEntity,
-    onSaveSettings: (AppSettingsEntity) -> Unit,
     onExportClick: () -> Unit,
     onImportClick: () -> Unit
 ) {
@@ -1254,118 +1252,6 @@ private fun BackupAndRestoreSettingsTab(
                 }
             }
         }
-
-        item {
-            MerchantDefinitionsTabContentCardOnly(
-                settings = settings,
-                onSaveSettings = onSaveSettings
-            )
-        }
-    }
-}
-
-@Composable
-private fun MerchantDefinitionsTabContentCardOnly(
-    settings: AppSettingsEntity,
-    onSaveSettings: (AppSettingsEntity) -> Unit
-) {
-    var merchantName by remember(settings) { mutableStateOf(settings.merchantName) }
-    var merchantPhone by remember(settings) { mutableStateOf(settings.merchantPhone) }
-    var merchantAddress by remember(settings) { mutableStateOf(settings.merchantAddress) }
-    var currencySymbol by remember(settings) { mutableStateOf(settings.currencySymbol) }
-    var startingInvNum by remember(settings) { mutableStateOf(settings.startingInvoiceNumber.toString()) }
-    var footerNotes by remember(settings) { mutableStateOf(settings.invoiceFooterNotes) }
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, WheatCardBorder, RoundedCornerShape(16.dp)),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text(
-                text = "بيانات التاجر والمكتب (ترويسة الفاتورة المطبوعة)",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-
-            OutlinedTextField(
-                value = merchantName,
-                onValueChange = { merchantName = it },
-                label = { Text("اسم المكتب أو التاجر") },
-                placeholder = { Text("اكتب اسم المكتب أو التاجر هنا...") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            OutlinedTextField(
-                value = merchantPhone,
-                onValueChange = { merchantPhone = it },
-                label = { Text("رقم هاتف المكتب / التاجر") },
-                placeholder = { Text("اكتب رقم الهاتف هنا...") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            OutlinedTextField(
-                value = merchantAddress,
-                onValueChange = { merchantAddress = it },
-                label = { Text("العنوان / المكان") },
-                placeholder = { Text("اكتب عنوان المكتب أو الشونة هنا...") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = currencySymbol,
-                    onValueChange = { currencySymbol = it },
-                    label = { Text("العملة الافتراضية") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
-                )
-                OutlinedTextField(
-                    value = startingInvNum,
-                    onValueChange = { startingInvNum = it },
-                    label = { Text("رقم الفاتورة القادم") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            OutlinedTextField(
-                value = footerNotes,
-                onValueChange = { footerNotes = it },
-                label = { Text("ملاحظات أسفل الفاتورة المطبوعة (اختياري)") },
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Button(
-                onClick = {
-                    onSaveSettings(
-                        settings.copy(
-                            merchantName = merchantName.trim(),
-                            merchantPhone = merchantPhone.trim(),
-                            merchantAddress = merchantAddress.trim(),
-                            currencySymbol = currencySymbol.trim().ifBlank { "ج.م" },
-                            startingInvoiceNumber = startingInvNum.toIntOrNull() ?: settings.startingInvoiceNumber,
-                            invoiceFooterNotes = footerNotes.trim()
-                        )
-                    )
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Save, contentDescription = null)
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("حفظ الإعدادات")
-            }
-        }
     }
 }
 
@@ -1378,14 +1264,13 @@ private fun AboutAppAndDeveloperTab(context: Context) {
     var availableUpdate by remember { mutableStateOf(AppUpdateManager.getCachedAvailableUpdate(context)) }
     var isCheckingUpdate by remember { mutableStateOf(false) }
     var updateStatusText by remember { mutableStateOf<String?>(null) }
-    var showUpdateConfigDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // 1. App Identity Card
+        // 1. App Identity Card (Under UltraSoft Umbrella)
         item {
             Card(
                 modifier = Modifier
@@ -1430,7 +1315,7 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                         color = EmeraldLight
                     ) {
                         Text(
-                            text = "Grain Trade Manager ERP • الإصدار ${AppUpdateManager.currentVersionName} (بناء رقم ${AppUpdateManager.currentVersionCode})",
+                            text = "UltraSoft ERP • الإصدار ${AppUpdateManager.currentVersionName} (بناء رقم ${AppUpdateManager.currentVersionCode})",
                             style = MaterialTheme.typography.labelLarge,
                             color = EmeraldPrimary,
                             fontWeight = FontWeight.Bold,
@@ -1439,7 +1324,7 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                     }
 
                     Text(
-                        text = "النظام الرقمي المتكامل لإدارة عمليات شراء وتوريد ووزن الحبوب والغلال والشُّوَن. صُمم خصيصًا ليحل محل الدفاتر الورقية بدقة وسرعة فائقة، مع التجميع الخماسي الآلي للأوزان، وتقسيم الفاتورة لأكثر من قسم وتسعير، وإصدار فواتير A4 جاهزة للطباعة والمشاركة.",
+                        text = "أحد الأنظمة الرقمية المتكاملة الصادرة تحت مظلة شركة UltraSoft. صُمم خصيصًا لإدارة عمليات شراء وتوريد ووزن الحبوب والغلال والشُّوَن بدقة وسرعة فائقة، مع التجميع الخماسي الآلي للأوزان، وتقسيم الفاتورة لأكثر من قسم وتسعير، وإصدار فواتير A4 جاهزة للطباعة والمشاركة.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -1449,7 +1334,7 @@ private fun AboutAppAndDeveloperTab(context: Context) {
             }
         }
 
-        // 2. App Update Notification & Download System Card (تحديثات البرنامج والإصدارات الجديدة)
+        // 2. App Update Notification & Download System Card (مرتبط تلقائيًا بمستودع Ahm3d0x/Grain-Trade-Manager)
         item {
             Card(
                 modifier = Modifier
@@ -1547,14 +1432,6 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                 }
-                                if (upd.downloadUrl.isNotBlank()) {
-                                    Text(
-                                        text = "رابط التحميل: ${upd.downloadUrl}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = EmeraldPrimary
-                                    )
-                                }
 
                                 Button(
                                     onClick = {
@@ -1567,7 +1444,7 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                                     Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "تحميل التحديث الجديد الآن (v${upd.versionName})",
+                                        text = "تنزيل التحديث الجديد الآن (v${upd.versionName})",
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -1584,67 +1461,52 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                         )
                     }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = {
-                                isCheckingUpdate = true
-                                updateStatusText = null
-                                coroutineScope.launch {
-                                    val result = AppUpdateManager.checkForUpdates(context)
-                                    isCheckingUpdate = false
-                                    when (result) {
-                                        is UpdateCheckResult.UpdateAvailable -> {
-                                            availableUpdate = result.info
-                                            updateStatusText = "تم العثور على تحديث جديد: الإصدار ${result.info.versionName}!"
-                                        }
-                                        is UpdateCheckResult.UpToDate -> {
-                                            availableUpdate = null
-                                            updateStatusText = "أنت تستخدم أحدث إصدار حاليًا (v${result.currentVersionName})."
-                                        }
-                                        is UpdateCheckResult.Error -> {
-                                            updateStatusText = result.message
-                                        }
+                    Button(
+                        onClick = {
+                            isCheckingUpdate = true
+                            updateStatusText = null
+                            coroutineScope.launch {
+                                val result = AppUpdateManager.checkForUpdates(context)
+                                isCheckingUpdate = false
+                                when (result) {
+                                    is UpdateCheckResult.UpdateAvailable -> {
+                                        availableUpdate = result.info
+                                        updateStatusText = "تم العثور على تحديث جديد: الإصدار ${result.info.versionName}!"
+                                    }
+                                    is UpdateCheckResult.UpToDate -> {
+                                        availableUpdate = null
+                                        updateStatusText = "أنت تستخدم أحدث إصدار حاليًا (v${result.currentVersionName})."
+                                    }
+                                    is UpdateCheckResult.Error -> {
+                                        updateStatusText = result.message
                                     }
                                 }
-                            },
-                            enabled = !isCheckingUpdate,
-                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
-                            modifier = Modifier.weight(1.2f),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            if (isCheckingUpdate) {
-                                CircularProgressIndicator(
-                                    color = Color.White,
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("جارِ الفحص...", fontSize = 12.sp)
-                            } else {
-                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("فحص التحديثات الآن", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
-                        }
-
-                        OutlinedButton(
-                            onClick = { showUpdateConfigDialog = true },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("إعداد رابط التحديث", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        },
+                        enabled = !isCheckingUpdate,
+                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        if (isCheckingUpdate) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("جارِ التحقق من وجود تحديثات...", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        } else {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("فحص وجود تحديثات جديدة الآن", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             }
         }
 
-        // 3. Developer Profile Card (المطور الخاص بالبرنامج - واتساب فقط بدون إيميل أو رقم مباشر)
+        // 3. Developer & UltraSoft Company Card (Eng. Ahmed Mohamed Attia — Founder & CEO of UltraSoft)
         item {
             Card(
                 modifier = Modifier
@@ -1663,7 +1525,7 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(46.dp)
+                                .size(48.dp)
                                 .clip(CircleShape)
                                 .background(EmeraldLight),
                             contentAlignment = Alignment.Center
@@ -1672,17 +1534,17 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                                 imageVector = Icons.Default.Code,
                                 contentDescription = null,
                                 tint = EmeraldPrimary,
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(25.dp)
                             )
                         }
                         Column {
                             Text(
-                                text = "تطوير وتصميم البرنامج",
+                                text = "Founder, CEO & Lead Software Engineer",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                text = "المهندس / أحمد عطية (Eng. Ahmed Attia)",
+                                text = "Eng. Ahmed Mohamed Attia",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = EmeraldPrimary
@@ -1699,10 +1561,10 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                     HorizontalDivider(color = WheatCardBorder)
 
                     Text(
-                        text = "متخصصون في هندسة وتطوير الأنظمة المحاسبية والإدارية المتكاملة (ERP) وتطبيقات الهواتف الذكية وحلول الأعمال الرقمية المؤمنة.",
+                        text = "هذا البرنامج أحد منتجات شركة UltraSoft للبرمجيات وحلول الأعمال الرقمية، والتي أسسها ويديرها المهندس أحمد محمد عطية (Eng. Ahmed Mohamed Attia)، حيث تندرج كافة البرامج والأنظمة المحاسبية والإدارية المصممة تحت مظلة UltraSoft.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 18.sp
+                        lineHeight = 19.sp
                     )
 
                     Surface(
@@ -1715,7 +1577,13 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
-                                text = "• حقوق الملكية الفكرية والتطوير محفوظة بالكامل للمطور.",
+                                text = "• جميع حقوق الملكية الفكرية والتطوير محفوظة لشركة UltraSoft.",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = EmeraldDark
+                            )
+                            Text(
+                                text = "• Designed & Engineered by Eng. Ahmed Mohamed Attia (Founder & CEO of UltraSoft).",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = EmeraldDark
@@ -1731,7 +1599,7 @@ private fun AboutAppAndDeveloperTab(context: Context) {
 
                     Button(
                         onClick = {
-                            val msg = "السلام عليكم باشمهندس أحمد، بخصوص برنامج إدارة تجارة الحبوب والغلال (Grain Trade Manager)"
+                            val msg = "السلام عليكم Eng. Ahmed Mohamed Attia، بخصوص برنامج إدارة تجارة الحبوب والغلال (UltraSoft)"
                             val intent = Intent(Intent.ACTION_VIEW).apply {
                                 data = Uri.parse("https://wa.me/201140409832?text=" + Uri.encode(msg))
                             }
@@ -1747,13 +1615,13 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                     ) {
                         Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("التواصل مع مطور البرنامج عبر واتساب")
+                        Text("التواصل مع المطور (UltraSoft) عبر واتساب")
                     }
                 }
             }
         }
 
-        // 3. Key System Capabilities Summary
+        // 4. Key System Capabilities Summary
         item {
             Card(
                 modifier = Modifier
@@ -1776,7 +1644,7 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                         "التجميع الخماسي الآلي للأوزان في أعمدة منظمة بدون أخطاء يدوية",
                         "تقسيم الفاتورة الواحدة إلى عدة أقسام مستقلة بنوع حبوب وسعر مختلف",
                         "حفظ تلقائي مستمر للبيانات وميزة تعليق الفواتير واستئنافها",
-                        "إصدار فواتير PDF رسمية بتنسيق A4 حتى 10 أعمدة بالصف جاهزة للطباعة",
+                        "تصدير وحفظ الفواتير باسم العميل ونوع الحبوب والتاريخ تلقائيًا",
                         "تقارير وإحصائيات شاملة للأصناف والعملاء والحركة اليومية والمدفوعات",
                         "العمل الكامل بدون إنترنت (Offline-First) مع النسخ الاحتياطي والاستعادة"
                     )
@@ -1802,165 +1670,6 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                 }
             }
         }
-    }
-
-    if (showUpdateConfigDialog) {
-        var repoUrlInput by remember { mutableStateOf(AppUpdateManager.getConfiguredUpdateUrl(context)) }
-        var manualVersionCode by remember {
-            mutableStateOf((availableUpdate?.versionCode ?: (AppUpdateManager.currentVersionCode + 1)).toString())
-        }
-        var manualVersionName by remember {
-            mutableStateOf(availableUpdate?.versionName ?: "2.0")
-        }
-        var manualDownloadUrl by remember {
-            mutableStateOf(availableUpdate?.downloadUrl ?: repoUrlInput)
-        }
-        var manualNotes by remember {
-            mutableStateOf(
-                availableUpdate?.releaseNotes
-                    ?: "إصدار جديد (v2.0) يتضمن تحسينات في الأداء والتقارير والطباعة."
-            )
-        }
-
-        AlertDialog(
-            onDismissRequest = { showUpdateConfigDialog = false },
-            title = { Text("إعدادات التحديثات وإشعار الإصدار الجديد") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "1. رابط مستودع GitHub أو ملف version.json للفحص التلقائي:",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = EmeraldPrimary
-                    )
-                    OutlinedTextField(
-                        value = repoUrlInput,
-                        onValueChange = { repoUrlInput = it },
-                        label = { Text("رابط GitHub أو رابط التحديث المباشر") },
-                        placeholder = { Text("https://github.com/username/repo") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    HorizontalDivider(color = WheatCardBorder)
-
-                    Text(
-                        text = "2. إشعار تحديث إصدار جديد (مثل الإصدار 2.0) مع رابط التحميل:",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = EmeraldPrimary
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = manualVersionCode,
-                            onValueChange = { manualVersionCode = it },
-                            label = { Text("رقم البناء (مثال: 2)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = manualVersionName,
-                            onValueChange = { manualVersionName = it },
-                            label = { Text("اسم الإصدار (2.0)") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    OutlinedTextField(
-                        value = manualDownloadUrl,
-                        onValueChange = { manualDownloadUrl = it },
-                        label = { Text("رابط تنزيل التحديث المباشر (APK Link)") },
-                        placeholder = { Text("https://github.com/.../GrainTradeManager-release.apk") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = manualNotes,
-                        onValueChange = { manualNotes = it },
-                        label = { Text("ملاحظات ومميزات التحديث الجديد") },
-                        maxLines = 3,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = {
-                                val code = manualVersionCode.toIntOrNull() ?: (AppUpdateManager.currentVersionCode + 1)
-                                val info = AppUpdateInfo(
-                                    versionCode = code.coerceAtLeast(AppUpdateManager.currentVersionCode + 1),
-                                    versionName = manualVersionName.trim().ifBlank { "2.0" },
-                                    downloadUrl = manualDownloadUrl.trim().ifBlank { repoUrlInput.trim() },
-                                    releaseNotes = manualNotes.trim(),
-                                    isMandatory = false
-                                )
-                                AppUpdateManager.saveAvailableUpdate(context, info)
-                                availableUpdate = info
-                                updateStatusText = "تم تفعيل إشعار التحديث للإصدار v${info.versionName} بنجاح!"
-                                showUpdateConfigDialog = false
-                            },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("إظهار إشعار التحديث", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        if (availableUpdate != null) {
-                            TextButton(
-                                onClick = {
-                                    AppUpdateManager.clearCachedUpdate(context)
-                                    availableUpdate = null
-                                    updateStatusText = "تم إخفاء إشعار التحديث."
-                                    showUpdateConfigDialog = false
-                                }
-                            ) {
-                                Text("إلغاء الإشعار", color = StatusUnpaidRed, fontSize = 11.sp)
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        AppUpdateManager.setConfiguredUpdateUrl(context, repoUrlInput.trim())
-                        showUpdateConfigDialog = false
-                        if (repoUrlInput.isNotBlank()) {
-                            isCheckingUpdate = true
-                            coroutineScope.launch {
-                                val res = AppUpdateManager.checkForUpdates(context, repoUrlInput.trim())
-                                isCheckingUpdate = false
-                                when (res) {
-                                    is UpdateCheckResult.UpdateAvailable -> {
-                                        availableUpdate = res.info
-                                        updateStatusText = "تم العثور على تحديث جديد: الإصدار ${res.info.versionName}!"
-                                    }
-                                    is UpdateCheckResult.UpToDate -> {
-                                        availableUpdate = null
-                                        updateStatusText = "البرنامج محدّث لأحدث إصدار (v${res.currentVersionName})."
-                                    }
-                                    is UpdateCheckResult.Error -> {
-                                        updateStatusText = "تم حفظ الرابط. (${res.message})"
-                                    }
-                                }
-                            }
-                        } else {
-                            Toast.makeText(context, "تم حفظ الإعدادات", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
-                ) {
-                    Text("حفظ وفحص")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showUpdateConfigDialog = false }) {
-                    Text("إغلاق")
-                }
-            }
-        )
     }
 }
 

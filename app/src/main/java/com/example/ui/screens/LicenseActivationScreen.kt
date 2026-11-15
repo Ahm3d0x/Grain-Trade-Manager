@@ -406,16 +406,16 @@ fun LicenseActivationScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "المهندس / أحمد عطية (Eng. Ahmed Attia)",
-                                fontSize = 14.sp,
+                                text = "Eng. Ahmed Mohamed Attia",
+                                fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = EmeraldPrimary
                             )
                             Text(
-                                text = "التواصل المباشر عبر واتساب لإصدار كود التفعيل",
+                                text = "Founder & CEO of UltraSoft",
                                 fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = EmeraldDark
+                                fontWeight = FontWeight.Bold,
+                                color = WheatGold
                             )
                         }
                     }
@@ -425,7 +425,7 @@ fun LicenseActivationScreen(
                     // Direct WhatsApp Contact Button ONLY
                     Button(
                         onClick = {
-                            val message = "السلام عليكم باشمهندس أحمد، أود الحصول على كود تفعيل برنامج إدارة تجارة الحبوب والغلال.\nمعرّف الجهاز (Machine ID):\n$machineId"
+                            val message = "السلام عليكم Eng. Ahmed Mohamed Attia، أود الحصول على كود تفعيل برنامج إدارة تجارة الحبوب والغلال (UltraSoft).\nمعرّف الجهاز (Machine ID):\n$machineId"
                             val waIntent = Intent(Intent.ACTION_VIEW).apply {
                                 data = Uri.parse(
                                     "https://wa.me/$DEVELOPER_WHATSAPP_INTL?text=" + Uri.encode(message)
@@ -473,7 +473,7 @@ fun LicenseActivationScreen(
             Spacer(modifier = Modifier.height(6.dp))
 
             Text(
-                text = "UltraSoft Authority Engine • Eng. Ahmed Attia",
+                text = "Powered by UltraSoft • Founded by Eng. Ahmed Mohamed Attia",
                 fontSize = 10.sp,
                 color = WheatGold,
                 fontWeight = FontWeight.Bold,

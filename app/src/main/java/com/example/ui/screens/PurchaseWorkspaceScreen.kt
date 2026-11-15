@@ -482,11 +482,10 @@ fun PurchaseWorkspaceScreen(
                             )
                         },
                         onShareGeneralPdf = {
-                            PdfInvoiceExporter.shareInvoicePdf(
+                            PdfInvoiceExporter.saveInvoicePdfToPhone(
                                 context = context,
                                 details = invoiceWithCalc.details,
-                                settings = settings,
-                                whatsAppOnly = false
+                                settings = settings
                             )
                         },
                         onPrintPdf = {
@@ -1602,7 +1601,7 @@ private fun FinalSummaryStepPage(
                         ) {
                             Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = WheatGold, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("PDF", softWrap = false, maxLines = 1)
+                            Text("حفظ بالهاتف", softWrap = false, maxLines = 1)
                         }
 
                         OutlinedButton(

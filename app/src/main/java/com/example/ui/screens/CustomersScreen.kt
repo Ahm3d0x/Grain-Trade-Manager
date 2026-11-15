@@ -527,11 +527,25 @@ fun CustomersScreen(
                                                     )
                                                 },
                                                 modifier = Modifier.weight(1f).height(38.dp),
-                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
                                             ) {
-                                                Icon(Icons.Default.Share, contentDescription = null, tint = EmeraldPrimary, modifier = Modifier.size(14.dp))
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text("إرسال", style = MaterialTheme.typography.labelMedium, softWrap = false, maxLines = 1)
+                                                Icon(Icons.Default.Share, contentDescription = null, tint = EmeraldPrimary, modifier = Modifier.size(13.dp))
+                                                Spacer(modifier = Modifier.width(3.dp))
+                                                Text("واتساب", style = MaterialTheme.typography.labelSmall, softWrap = false, maxLines = 1)
+                                            }
+
+                                            OutlinedButton(
+                                                onClick = {
+                                                    PdfInvoiceExporter.saveInvoicePdfToPhone(
+                                                        context = context,
+                                                        details = item.details,
+                                                        settings = settings
+                                                    )
+                                                },
+                                                modifier = Modifier.weight(0.9f).height(38.dp),
+                                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("حفظ", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, softWrap = false, maxLines = 1)
                                             }
 
                                             OutlinedButton(
@@ -542,12 +556,12 @@ fun CustomersScreen(
                                                         settings = settings
                                                     )
                                                 },
-                                                modifier = Modifier.weight(1f).height(38.dp),
-                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                                modifier = Modifier.weight(0.95f).height(38.dp),
+                                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
                                             ) {
-                                                Icon(Icons.Default.Print, contentDescription = null, tint = WheatGold, modifier = Modifier.size(14.dp))
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text("طباعة", style = MaterialTheme.typography.labelMedium, softWrap = false, maxLines = 1)
+                                                Icon(Icons.Default.Print, contentDescription = null, tint = WheatGold, modifier = Modifier.size(13.dp))
+                                                Spacer(modifier = Modifier.width(3.dp))
+                                                Text("طباعة", style = MaterialTheme.typography.labelSmall, softWrap = false, maxLines = 1)
                                             }
 
                                             OutlinedButton(

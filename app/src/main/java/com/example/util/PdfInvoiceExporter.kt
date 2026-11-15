@@ -1,5 +1,6 @@
 package com.example.util
 
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.graphics.Canvas
@@ -8,14 +9,17 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
+import android.os.Build
 import android.os.Bundle
 import android.os.CancellationSignal
+import android.os.Environment
 import android.os.ParcelFileDescriptor
 import android.print.PageRange
 import android.print.PrintAttributes
 import android.print.PrintDocumentAdapter
 import android.print.PrintDocumentInfo
 import android.print.PrintManager
+import android.provider.MediaStore
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.example.data.local.AppSettingsEntity
@@ -51,6 +55,29 @@ object PdfInvoiceExporter {
     private const val BOTTOM_MARGIN = 42f
     private const val CONTENT_WIDTH = PAGE_WIDTH - (MARGIN_H * 2)
     private const val MAX_COLUMNS_PER_ROW_BLOCK = 10 // Up to 10 vertical 5-weight columns side-by-side per row
+
+    /**
+     * Builds the invoice PDF filename using:
+     * Customer Name + Selected Grain Type(s) + Invoice Date (yyyy-MM-dd)
+     * Example: "احمد محمد - قمح - 2026-11-15.pdf"
+     */
+    fun buildInvoiceFileName(details: FullInvoiceDetails): String {
+        val rawCustomer = details.invoice.customerNameSnapshot.trim().ifBlank { "عميل" }
+        val rawGrains = details.sections
+            .map { it.section.productNameSnapshot.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .joinToString(" و ")
+            .ifBlank { "حبوب" }
+        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(details.invoice.invoiceDate))
+
+        val combined = "$rawCustomer - $rawGrains - $dateStr"
+        val sanitized = combined
+            .replace(Regex("""[\\/:*?"<>|]"""), "-")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+        return "$sanitized.pdf"
+    }
 
     fun generateInvoicePdfFile(
         context: Context,
@@ -399,7 +426,8 @@ object PdfInvoiceExporter {
         pdfDocument.finishPage(page)
 
         val dir = File(context.cacheDir, "invoices").apply { mkdirs() }
-        val file = File(dir, "invoice_${details.invoice.invoiceNumber}.pdf")
+        val fileName = buildInvoiceFileName(details)
+        val file = File(dir, fileName)
         FileOutputStream(file).use { out ->
             pdfDocument.writeTo(out)
         }
@@ -573,6 +601,73 @@ object PdfInvoiceExporter {
         setCurrentY(y + sectionPricingTableH + 14f)
     }
 
+    /**
+     * Saves the PDF invoice directly to the phone's Downloads folder with the name:
+     * "اسم العميل - نوع الحبوب - التاريخ.pdf"
+     */
+    fun saveInvoicePdfToPhone(
+        context: Context,
+        details: FullInvoiceDetails,
+        settings: AppSettingsEntity
+    ) {
+        try {
+            val pdfFile = generateInvoicePdfFile(context, details, settings)
+            val fileName = buildInvoiceFileName(details)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val resolver = context.contentResolver
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                    put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/فواتير الحبوب")
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                val itemUri = resolver.insert(collection, contentValues)
+                if (itemUri != null) {
+                    resolver.openOutputStream(itemUri)?.use { outputStream ->
+                        FileInputStream(pdfFile).use { inputStream ->
+                            inputStream.copyTo(outputStream)
+                        }
+                    }
+                    contentValues.clear()
+                    contentValues.put(MediaStore.Downloads.IS_PENDING, 0)
+                    resolver.update(itemUri, contentValues, null, null)
+
+                    Toast.makeText(
+                        context,
+                        "تم حفظ الفاتورة على الهاتف في (التنزيلات / فواتير الحبوب) باسم:\n$fileName",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return
+                }
+            }
+
+            // Fallback for Android 9 and below: save in app external Documents folder
+            val docsDir = File(
+                context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS),
+                "فواتير الحبوب"
+            ).apply { mkdirs() }
+            val destFile = File(docsDir, fileName)
+            FileInputStream(pdfFile).use { input ->
+                FileOutputStream(destFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            Toast.makeText(
+                context,
+                "تم حفظ الفاتورة على الهاتف باسم:\n$fileName",
+                Toast.LENGTH_LONG
+            ).show()
+        } catch (e: Exception) {
+            Toast.makeText(
+                context,
+                "تعذر حفظ الفاتورة على الهاتف: ${e.localizedMessage}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
     fun shareInvoicePdf(
         context: Context,
         details: FullInvoiceDetails,
@@ -581,15 +676,24 @@ object PdfInvoiceExporter {
     ) {
         try {
             val file = generateInvoicePdfFile(context, details, settings)
+            val fileName = buildInvoiceFileName(details)
             val uri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",
                 file
             )
             val calc = CalculationEngine.calculateInvoice(details)
+            val grainNames = details.sections
+                .map { it.section.productNameSnapshot.trim() }
+                .filter { it.isNotBlank() }
+                .distinct()
+                .joinToString("، ")
+                .ifBlank { "حبوب" }
+            val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(details.invoice.invoiceDate))
+
             val shareText = buildString {
-                appendLine("فاتورة شراء حبوب رقم #${details.invoice.invoiceNumber}")
-                appendLine("العميل: ${details.invoice.customerNameSnapshot}")
+                appendLine("فاتورة: ${details.invoice.customerNameSnapshot} - $grainNames - $dateStr")
+                appendLine("رقم الفاتورة: #${details.invoice.invoiceNumber}")
                 appendLine("إجمالي الوزن: ${CalculationEngine.formatWeight(calc.totalWeightKg)} كجم (${calc.totalBagCount} شكارة)")
                 appendLine("الإجمالي النهائي: ${CalculationEngine.formatCurrency(calc.totalInvoiceAmount, settings.currencySymbol)}")
                 appendLine("المدفوع: ${CalculationEngine.formatCurrency(calc.netPaidAmount, settings.currencySymbol)} | المتبقي: ${CalculationEngine.formatCurrency(calc.remainingAmount, settings.currencySymbol)}")
@@ -597,6 +701,7 @@ object PdfInvoiceExporter {
 
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/pdf"
+                putExtra(Intent.EXTRA_TITLE, fileName.removeSuffix(".pdf"))
                 putExtra(Intent.EXTRA_STREAM, uri)
                 putExtra(Intent.EXTRA_TEXT, shareText)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -606,10 +711,21 @@ object PdfInvoiceExporter {
             }
 
             try {
-                context.startActivity(Intent.createChooser(intent, "مشاركة الفاتورة PDF"))
-            } catch (e: Exception) {
+                context.startActivity(
+                    if (whatsAppOnly) intent else Intent.createChooser(intent, "إرسال الفاتورة ($fileName)")
+                )
+            } catch (_: Exception) {
+                // If regular WhatsApp isn't installed, try WhatsApp Business, then general chooser
+                if (whatsAppOnly) {
+                    try {
+                        intent.setPackage("com.whatsapp.w4b")
+                        context.startActivity(intent)
+                        return
+                    } catch (_: Exception) {
+                    }
+                }
                 intent.setPackage(null)
-                context.startActivity(Intent.createChooser(intent, "مشاركة الفاتورة PDF"))
+                context.startActivity(Intent.createChooser(intent, "إرسال الفاتورة ($fileName)"))
             }
         } catch (e: Exception) {
             Toast.makeText(context, "تعذر إنشاء ملف PDF: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
@@ -623,8 +739,9 @@ object PdfInvoiceExporter {
     ) {
         try {
             val pdfFile = generateInvoicePdfFile(context, details, settings)
+            val fileName = buildInvoiceFileName(details)
             val printManager = context.getSystemService(Context.PRINT_SERVICE) as? PrintManager
-            val jobName = "Invoice_${details.invoice.invoiceNumber}"
+            val jobName = fileName.removeSuffix(".pdf")
 
             printManager?.print(
                 jobName,
@@ -640,7 +757,7 @@ object PdfInvoiceExporter {
                             callback?.onLayoutCancelled()
                             return
                         }
-                        val info = PrintDocumentInfo.Builder("invoice_${details.invoice.invoiceNumber}.pdf")
+                        val info = PrintDocumentInfo.Builder(fileName)
                             .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
                             .build()
                         callback?.onLayoutFinished(info, true)

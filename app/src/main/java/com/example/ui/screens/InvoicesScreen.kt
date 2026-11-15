@@ -421,11 +421,10 @@ fun InvoicesScreen(
 
                             OutlinedButton(
                                 onClick = {
-                                    PdfInvoiceExporter.shareInvoicePdf(
+                                    PdfInvoiceExporter.saveInvoicePdfToPhone(
                                         context = context,
                                         details = item.details,
-                                        settings = settings,
-                                        whatsAppOnly = false
+                                        settings = settings
                                     )
                                 },
                                 modifier = Modifier.weight(1f).height(38.dp),
@@ -433,7 +432,7 @@ fun InvoicesScreen(
                             ) {
                                 Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = WheatGold, modifier = Modifier.size(15.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("PDF", style = MaterialTheme.typography.labelMedium, softWrap = false, maxLines = 1)
+                                Text("حفظ", style = MaterialTheme.typography.labelMedium, softWrap = false, maxLines = 1)
                             }
 
                             OutlinedButton(
