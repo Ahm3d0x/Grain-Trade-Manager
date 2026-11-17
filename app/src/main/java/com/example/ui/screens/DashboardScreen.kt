@@ -27,10 +27,13 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Grass
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Scale
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -40,6 +43,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -57,7 +61,9 @@ import androidx.compose.ui.unit.dp
 import com.example.data.local.AppSettingsEntity
 import com.example.data.local.InvoiceStatus
 import com.example.data.local.PaymentStatus
+import com.example.data.local.ProfitCalculationMode
 import com.example.domain.CalculationEngine
+import com.example.domain.WarehouseSummary
 import com.example.ui.theme.EmeraldDark
 import com.example.ui.theme.EmeraldLight
 import com.example.ui.theme.EmeraldPrimary
@@ -82,6 +88,7 @@ import java.util.Locale
 @Composable
 fun DashboardScreen(
     invoices: List<InvoiceWithCalc>,
+    warehouseSummary: WarehouseSummary? = null,
     selectedPeriod: DashboardPeriod,
     settings: AppSettingsEntity,
     onSelectPeriod: (DashboardPeriod) -> Unit,
@@ -104,12 +111,26 @@ fun DashboardScreen(
         invoices.filter { it.details.invoice.invoiceDate >= cutoff }
     }
 
-    val totalPurchases = filteredInvoices.size
-    val totalWeightKg = filteredInvoices.sumOf { it.calc.totalWeightKg }
-    val totalBags = filteredInvoices.sumOf { it.calc.totalBagCount }
-    val totalAmount = filteredInvoices.sumOf { it.calc.totalInvoiceAmount }
-    val totalPaid = filteredInvoices.sumOf { it.calc.netPaidAmount }
-    val totalRemaining = filteredInvoices.sumOf { it.calc.remainingAmount }
+    val purchaseInvoices = remember(filteredInvoices) {
+        filteredInvoices.filter { !it.calc.isSaleInvoice }
+    }
+    val saleInvoices = remember(filteredInvoices) {
+        filteredInvoices.filter { it.calc.isSaleInvoice }
+    }
+
+    val profitMode = remember(settings.profitCalculationMode) {
+        runCatching { ProfitCalculationMode.valueOf(settings.profitCalculationMode) }
+            .getOrDefault(ProfitCalculationMode.WITH_EXPENSES)
+    }
+
+    val totalPurchases = purchaseInvoices.size
+    val totalWeightKg = purchaseInvoices.sumOf { it.calc.totalWeightKg }
+    val totalBags = purchaseInvoices.sumOf { it.calc.totalBagCount }
+    val totalAmount = purchaseInvoices.sumOf { it.calc.totalInvoiceAmount }
+    val totalPaid = purchaseInvoices.sumOf { it.calc.netPaidAmount }
+    val totalRemaining = purchaseInvoices.sumOf { it.calc.remainingAmount }
+
+    val periodSalesProfit = saleInvoices.sumOf { it.calc.getEffectiveProfit(profitMode) }
 
     LazyColumn(
         modifier = Modifier
@@ -119,7 +140,7 @@ fun DashboardScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // 1. Hero Header Banner + Quick New Purchase Action
+        // 1. Hero Header Banner + Quick New Purchase & Live Warehouse Actions
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -156,7 +177,7 @@ fun DashboardScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = "النظام المتكامل لشراء ووزن الحبوب وتقسيم الفواتير",
+                                    text = "النظام المتكامل لشراء الحبوب وإدارة الشونة والمبيعات والأرباح",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = Color.White.copy(alpha = 0.85f)
                                 )
@@ -177,29 +198,62 @@ fun DashboardScreen(
                             }
                         }
 
-                        Button(
-                            onClick = onStartNewPurchase,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(54.dp)
-                                .testTag("new_purchase_hero_button"),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = WheatGold,
-                                contentColor = Color.White
-                            )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.AddCircle,
-                                contentDescription = null,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "عملية شراء جديدة (تسجيل أوزان)",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
+                            Button(
+                                onClick = onStartNewPurchase,
+                                modifier = Modifier
+                                    .weight(1.25f)
+                                    .height(52.dp)
+                                    .testTag("new_purchase_hero_button"),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = WheatGold,
+                                    contentColor = Color.White
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AddCircle,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "عملية شراء جديدة",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = { onNavigate(AppScreen.WAREHOUSE) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(52.dp)
+                                    .testTag("open_warehouse_hero_button"),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = Color.White.copy(alpha = 0.14f),
+                                    contentColor = Color.White
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Inventory2,
+                                    contentDescription = null,
+                                    tint = WheatGoldLight,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "الشونة والمبيعات",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                            }
                         }
                     }
                 }
@@ -240,7 +294,7 @@ fun DashboardScreen(
             }
         }
 
-        // 3. Key Metrics Grid (Purchases Count, Total Weight, Total Value, Remaining Balance)
+        // 3. Key Metrics Grid (Purchases, Weights, Live Warehouse Stock, and Sales Profit)
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
@@ -257,7 +311,7 @@ fun DashboardScreen(
                     )
                     StatSummaryCard(
                         modifier = Modifier.weight(1f),
-                        title = "إجمالي الأوزان",
+                        title = "إجمالي الأوزان المشتراة",
                         value = "${CalculationEngine.formatWeight(totalWeightKg)} كجم",
                         subtitle = "≈ ${CalculationEngine.formatNumber(totalWeightKg / 1000.0, 3)} طن",
                         icon = Icons.Default.Scale,
@@ -285,10 +339,37 @@ fun DashboardScreen(
                         accentColor = if (totalRemaining > 0) StatusPartialAmber else StatusPaidGreen
                     )
                 }
+
+                if (warehouseSummary != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        StatSummaryCard(
+                            modifier = Modifier.weight(1f),
+                            title = "رصيد الشونة الحي",
+                            value = "${CalculationEngine.formatWeight(warehouseSummary.totalAvailableWeightKg)} كجم",
+                            subtitle = "بقيمة: ${CalculationEngine.formatCurrency(warehouseSummary.totalStockValuation, settings.currencySymbol)}",
+                            icon = Icons.Default.Inventory2,
+                            accentColor = EmeraldPrimary
+                        )
+                        StatSummaryCard(
+                            modifier = Modifier.weight(1f),
+                            title = "صافي أرباح المبيعات",
+                            value = CalculationEngine.formatCurrency(
+                                warehouseSummary.getTotalProfitByMode(profitMode),
+                                settings.currencySymbol
+                            ),
+                            subtitle = "فترة العرض: ${CalculationEngine.formatCurrency(periodSalesProfit, settings.currencySymbol)}",
+                            icon = Icons.Default.TrendingUp,
+                            accentColor = StatusPaidGreen
+                        )
+                    }
+                }
             }
         }
 
-        // 4. Application Structure Quick Grid (Matches User Attachment #2)
+        // 4. Application Structure Quick Grid
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
@@ -310,17 +391,25 @@ fun DashboardScreen(
                     )
                     QuickNavTile(
                         modifier = Modifier.weight(1f),
-                        title = "الفواتير والعمليات",
-                        subtitle = "البحث والمدفوعات وPDF",
-                        icon = Icons.Default.Description,
-                        onClick = { onNavigate(AppScreen.INVOICES) },
-                        testTag = "quick_nav_invoices"
+                        title = "الشونة والمبيعات",
+                        subtitle = "المخزن الحي والربح والجفاف",
+                        icon = Icons.Default.Inventory2,
+                        onClick = { onNavigate(AppScreen.WAREHOUSE) },
+                        testTag = "quick_nav_warehouse"
                     )
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    QuickNavTile(
+                        modifier = Modifier.weight(1f),
+                        title = "الفواتير والعمليات",
+                        subtitle = "البحث والمدفوعات وPDF",
+                        icon = Icons.Default.Description,
+                        onClick = { onNavigate(AppScreen.INVOICES) },
+                        testTag = "quick_nav_invoices"
+                    )
                     QuickNavTile(
                         modifier = Modifier.weight(1f),
                         title = "إدارة العملاء",
@@ -329,14 +418,6 @@ fun DashboardScreen(
                         onClick = { onNavigate(AppScreen.CUSTOMERS) },
                         testTag = "quick_nav_customers"
                     )
-                    QuickNavTile(
-                        modifier = Modifier.weight(1f),
-                        title = "التقارير والإحصائيات",
-                        subtitle = "الأصناف والعملاء والمدفوعات",
-                        icon = Icons.Default.Payments,
-                        onClick = { onNavigate(AppScreen.REPORTS) },
-                        testTag = "quick_nav_reports"
-                    )
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -344,18 +425,18 @@ fun DashboardScreen(
                 ) {
                     QuickNavTile(
                         modifier = Modifier.weight(1f),
-                        title = "التعريفات والوحدات",
-                        subtitle = "الحبوب وأوزان الوحدات",
-                        icon = Icons.Default.Grass,
-                        onClick = { onNavigate(AppScreen.DEFINITIONS) },
-                        testTag = "quick_nav_definitions"
+                        title = "التقارير والإحصائيات",
+                        subtitle = "الأرباح والمحاصيل والعملاء",
+                        icon = Icons.Default.Payments,
+                        onClick = { onNavigate(AppScreen.REPORTS) },
+                        testTag = "quick_nav_reports"
                     )
                     QuickNavTile(
                         modifier = Modifier.weight(1f),
-                        title = "الإعدادات والترخيص",
-                        subtitle = "الترخيص والنسخ وحول المطور",
+                        title = "الإعدادات والتعريفات",
+                        subtitle = "نظام الربح والوحدات والنسخ",
                         icon = Icons.Default.Settings,
-                        onClick = { onNavigate(AppScreen.SETTINGS) },
+                        onClick = { onNavigate(AppScreen.DEFINITIONS) },
                         testTag = "quick_nav_settings"
                     )
                 }
@@ -560,6 +641,7 @@ fun RecentInvoiceRowCard(
 ) {
     val inv = item.details.invoice
     val calc = item.calc
+    val isSale = calc.isSaleInvoice
     val dateFormat = remember { SimpleDateFormat("yyyy/MM/dd - hh:mm a", Locale("ar", "EG")) }
     val productsText = calc.productSummaries.joinToString(" ، ") { it.productName }.ifBlank { "بدون محصول" }
 
@@ -588,12 +670,13 @@ fun RecentInvoiceRowCard(
                 ) {
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = EmeraldLight
+                        color = if (isSale) WheatGoldLight else EmeraldLight
                     ) {
                         Text(
-                            text = "فاتورة #${inv.invoiceNumber}",
+                            text = if (isSale) "بيع #${inv.invoiceNumber}" else "فاتورة #${inv.invoiceNumber}",
                             style = MaterialTheme.typography.labelLarge,
-                            color = EmeraldPrimary,
+                            color = if (isSale) EmeraldDark else EmeraldPrimary,
+                            fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                         )
                     }
@@ -614,7 +697,11 @@ fun RecentInvoiceRowCard(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "$productsText • ${calc.sectionCalculations.size} قسم • ${dateFormat.format(Date(inv.invoiceDate))}",
+                        text = if (isSale) {
+                            "$productsText • توريد وزن مقطوع • ${dateFormat.format(Date(inv.invoiceDate))}"
+                        } else {
+                            "$productsText • ${calc.sectionCalculations.size} قسم • ${dateFormat.format(Date(inv.invoiceDate))}"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -627,7 +714,11 @@ fun RecentInvoiceRowCard(
                         color = EmeraldPrimary
                     )
                     Text(
-                        text = "${CalculationEngine.formatWeight(calc.totalWeightKg)} كجم (${calc.totalBagCount} شكارة)",
+                        text = if (isSale) {
+                            "${CalculationEngine.formatWeight(calc.totalWeightKg)} كجم (وزن مقطوع)"
+                        } else {
+                            "${CalculationEngine.formatWeight(calc.totalWeightKg)} كجم (${calc.totalBagCount} شكارة)"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

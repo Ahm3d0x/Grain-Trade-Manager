@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Grass
@@ -64,6 +65,7 @@ import com.example.data.local.CustomerEntity
 import com.example.data.local.InvoiceStatus
 import com.example.data.local.PaymentRecordType
 import com.example.data.local.PaymentStatus
+import com.example.data.local.ProfitCalculationMode
 import com.example.domain.CalculationEngine
 import com.example.ui.theme.EmeraldDark
 import com.example.ui.theme.EmeraldLight
@@ -87,6 +89,7 @@ import java.util.Date
 import java.util.Locale
 
 private enum class ReportTab(val titleAr: String, val icon: ImageVector) {
+    PROFIT_CHARTS("رسوم أرباح الحبوب", Icons.Default.BarChart),
     OVERVIEW("الملخص العام", Icons.Default.Assessment),
     PRODUCTS("تقرير المحاصيل", Icons.Default.Grass),
     CUSTOMERS("تقرير العملاء", Icons.Default.Group),
@@ -144,10 +147,15 @@ fun ReportsScreen(
     onOpenInvoice: (Long) -> Unit
 ) {
     val context = LocalContext.current
-    var selectedTab by remember { mutableStateOf(ReportTab.OVERVIEW) }
+    var selectedTab by remember { mutableStateOf(ReportTab.PROFIT_CHARTS) }
     var selectedPeriod by remember { mutableStateOf(DashboardPeriod.ALL) }
     var includeDrafts by remember { mutableStateOf(true) }
     var onlyUnpaidCustomers by remember { mutableStateOf(false) }
+
+    val profitMode = remember(settings.profitCalculationMode) {
+        runCatching { ProfitCalculationMode.valueOf(settings.profitCalculationMode) }
+            .getOrDefault(ProfitCalculationMode.WITH_EXPENSES)
+    }
 
     val filteredInvoices = remember(invoices, selectedPeriod, includeDrafts) {
         val periodFiltered = filterInvoicesByPeriodForReports(invoices, selectedPeriod)
@@ -297,12 +305,12 @@ fun ReportsScreen(
                 ) {
                     Column {
                         Text(
-                            text = "التقارير والإحصائيات الشاملة",
+                            text = "التقارير والرسوم البيانية للأرباح",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "تحليل المشتريات والأوزان والمحاصيل وحسابات العملاء",
+                            text = "رسوم بيانية تفاعلية لأرباح الحبوب وتحليل المشتريات والعملاء",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -379,7 +387,7 @@ fun ReportsScreen(
                     }
                 }
 
-                // Sub-navigation tabs for the 4 Report types
+                // Sub-navigation tabs for the Report types
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -427,6 +435,18 @@ fun ReportsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             when (selectedTab) {
+                ReportTab.PROFIT_CHARTS -> {
+                    item {
+                        GrainProfitChartsSection(
+                            allInvoices = invoices,
+                            periodFilteredInvoices = filteredInvoices,
+                            periodLabel = selectedPeriod.labelAr,
+                            profitMode = profitMode,
+                            currency = settings.currencySymbol
+                        )
+                    }
+                }
+
                 ReportTab.OVERVIEW -> {
                     item {
                         OverviewReportSection(

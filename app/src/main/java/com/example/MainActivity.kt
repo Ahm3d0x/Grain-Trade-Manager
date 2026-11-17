@@ -5,30 +5,30 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Assessment
-import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.Scale
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.Scale
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -50,20 +50,18 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
 import com.example.security.LicenseManager
 import com.example.security.LicenseValidationResult
 import com.example.ui.screens.CustomersScreen
@@ -73,15 +71,14 @@ import com.example.ui.screens.InvoicesScreen
 import com.example.ui.screens.LicenseActivationScreen
 import com.example.ui.screens.PurchaseWorkspaceScreen
 import com.example.ui.screens.ReportsScreen
+import com.example.ui.screens.WarehouseAndSalesScreen
 import com.example.ui.theme.EmeraldDark
 import com.example.ui.theme.EmeraldLight
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.MyApplicationTheme
-import com.example.ui.theme.WheatGold
 import com.example.ui.theme.WheatGoldLight
 import com.example.ui.viewmodel.AppScreen
 import com.example.ui.viewmodel.GrainViewModel
-import com.example.util.AppUpdateInfo
 import com.example.util.AppUpdateManager
 import com.example.util.UpdateCheckResult
 
@@ -130,6 +127,8 @@ fun GrainTradeManagerApp(
     val currentScreen by viewModel.currentScreen.collectAsStateWithLifecycle()
     val dashboardPeriod by viewModel.dashboardPeriod.collectAsStateWithLifecycle()
     val allInvoices by viewModel.allInvoicesWithCalc.collectAsStateWithLifecycle()
+    val warehouseSummary by viewModel.warehouseSummary.collectAsStateWithLifecycle()
+    val inventoryAdjustments by viewModel.inventoryAdjustments.collectAsStateWithLifecycle()
     val activeInvoice by viewModel.activeInvoiceWithCalc.collectAsStateWithLifecycle()
     val activeSectionId by viewModel.activeSectionId.collectAsStateWithLifecycle()
     val keypadInput by viewModel.keypadInput.collectAsStateWithLifecycle()
@@ -272,6 +271,7 @@ fun GrainTradeManagerApp(
         listOf(
             NavItem(AppScreen.DASHBOARD, "الرئيسية", Icons.Default.Dashboard, "nav_dashboard"),
             NavItem(AppScreen.PURCHASE_WORKSPACE, "شراء ووزن", Icons.Default.Scale, "nav_purchase"),
+            NavItem(AppScreen.WAREHOUSE, "الشونة", Icons.Default.Inventory2, "nav_warehouse"),
             NavItem(AppScreen.INVOICES, "الفواتير", Icons.Default.Description, "nav_invoices"),
             NavItem(AppScreen.CUSTOMERS, "العملاء", Icons.Default.Group, "nav_customers"),
             NavItem(AppScreen.REPORTS, "التقارير", Icons.Default.Assessment, "nav_reports"),
@@ -312,7 +312,7 @@ fun GrainTradeManagerApp(
                                 label = {
                                     Text(
                                         text = item.label,
-                                        fontSize = 10.sp,
+                                        fontSize = 9.5.sp,
                                         softWrap = false,
                                         maxLines = 1
                                     )
@@ -363,6 +363,7 @@ fun GrainTradeManagerApp(
                         AppScreen.DASHBOARD -> {
                             DashboardScreen(
                                 invoices = allInvoices,
+                                warehouseSummary = warehouseSummary,
                                 selectedPeriod = dashboardPeriod,
                                 settings = settings,
                                 onSelectPeriod = viewModel::setDashboardPeriod,
@@ -375,7 +376,7 @@ fun GrainTradeManagerApp(
                         AppScreen.PURCHASE_WORKSPACE -> {
                             PurchaseWorkspaceScreen(
                                 invoiceWithCalc = activeInvoice,
-                                heldDraftInvoices = allInvoices,
+                                heldDraftInvoices = allInvoices.filter { !it.calc.isSaleInvoice },
                                 activeSectionId = activeSectionId,
                                 keypadInput = keypadInput,
                                 customers = customers,
@@ -417,6 +418,43 @@ fun GrainTradeManagerApp(
                                     }
                                 },
                                 onDeleteInvoice = viewModel::deleteInvoiceById
+                            )
+                        }
+
+                        AppScreen.WAREHOUSE -> {
+                            WarehouseAndSalesScreen(
+                                warehouseSummary = warehouseSummary,
+                                allInvoices = allInvoices,
+                                adjustments = inventoryAdjustments,
+                                customers = customers,
+                                products = products,
+                                pricingUnits = pricingUnits,
+                                settings = settings,
+                                onCreateBulkSale = { cust, customName, prod, unit, bulkKg, unitPrice, costPerKg, expenses, paidAmt, payMethod, notes ->
+                                    viewModel.createBulkSaleInvoice(
+                                        customer = cust,
+                                        customCustomerName = customName,
+                                        product = prod,
+                                        unit = unit,
+                                        bulkWeightKg = bulkKg,
+                                        sellingUnitPrice = unitPrice,
+                                        costPerKgSnapshot = costPerKg,
+                                        saleExpenses = expenses,
+                                        initialPaidAmount = paidAmt,
+                                        paymentMethod = payMethod,
+                                        notes = notes
+                                    )
+                                },
+                                onRecordShrinkage = viewModel::recordShrinkageAdjustment,
+                                onZeroOutBatch = viewModel::zeroOutBatchStock,
+                                onDeleteAdjustment = viewModel::deleteInventoryAdjustment,
+                                onRecordPayment = viewModel::recordInvoicePayment,
+                                onDeleteInvoice = viewModel::deleteInvoiceById,
+                                onToggleProfitMode = { newMode ->
+                                    viewModel.saveAppSettings(
+                                        settings.copy(profitCalculationMode = newMode.name)
+                                    )
+                                }
                             )
                         }
 

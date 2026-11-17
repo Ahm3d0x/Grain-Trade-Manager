@@ -8,14 +8,18 @@ import com.example.data.local.AppSettingsEntity
 import com.example.data.local.CustomerEntity
 import com.example.data.local.FullInvoiceDetails
 import com.example.data.local.GrainDatabase
+import com.example.data.local.InventoryAdjustmentEntity
 import com.example.data.local.InvoiceSectionEntity
 import com.example.data.local.InvoiceStatus
+import com.example.data.local.InvoiceType
 import com.example.data.local.PricingUnitEntity
 import com.example.data.local.ProductEntity
+import com.example.data.local.ShrinkageAdjustmentType
 import com.example.data.local.WeightEntity
 import com.example.data.repository.GrainRepository
 import com.example.domain.CalculationEngine
 import com.example.domain.InvoiceCalculation
+import com.example.domain.WarehouseSummary
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -27,11 +31,11 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.util.Calendar
 
 enum class AppScreen(val titleAr: String) {
     DASHBOARD("الرئيسية"),
     PURCHASE_WORKSPACE("عملية شراء"),
+    WAREHOUSE("الشونة والمبيعات"),
     INVOICES("الفواتير والعمليات"),
     CUSTOMERS("إدارة العملاء"),
     REPORTS("التقارير والإحصائيات"),
@@ -83,6 +87,9 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
     val pricingUnits: StateFlow<List<PricingUnitEntity>> = repository.pricingUnitsFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val inventoryAdjustments: StateFlow<List<InventoryAdjustmentEntity>> = repository.inventoryAdjustmentsFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val settings: StateFlow<AppSettingsEntity> = repository.settingsFlow
         .combine(flowOf(AppSettingsEntity())) { dbSettings, fallback -> dbSettings ?: fallback }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppSettingsEntity())
@@ -97,6 +104,37 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val warehouseSummary: StateFlow<WarehouseSummary> = combine(
+        products,
+        pricingUnits,
+        allInvoicesWithCalc,
+        inventoryAdjustments
+    ) { prods, units, invs, adjs ->
+        CalculationEngine.calculateWarehouseSummary(
+            products = prods,
+            pricingUnits = units,
+            allInvoices = invs.map { it.details to it.calc },
+            adjustments = adjs
+        )
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        WarehouseSummary(
+            productStocks = emptyList(),
+            totalAvailableWeightKg = 0.0,
+            totalStockValuation = 0.0,
+            totalPurchasedWeightKg = 0.0,
+            totalSoldWeightKg = 0.0,
+            totalShrinkageWeightKg = 0.0,
+            overallShrinkagePercent = 0.0,
+            totalSalesRevenue = 0.0,
+            totalSalesCostOfGoods = 0.0,
+            totalSalesExpenses = 0.0,
+            totalDirectProfit = 0.0,
+            totalNetProfitAfterExpenses = 0.0
+        )
+    )
 
     val activeInvoiceWithCalc: StateFlow<InvoiceWithCalc?> = _activeInvoiceId
         .flatMapLatest { id ->
@@ -113,14 +151,18 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     init {
-        // Restore active draft invoice automatically if app was closed or restarted
+        // Restore active draft purchase invoice automatically if app was closed or restarted
         viewModelScope.launch {
             val savedInvId = prefs.getLong(KEY_ACTIVE_INVOICE_ID, -1L).takeIf { it > 0L }
             val savedSecId = prefs.getLong(KEY_ACTIVE_SECTION_ID, -1L).takeIf { it > 0L }
 
             if (savedInvId != null) {
                 val existing = repository.getInvoiceByIdOnce(savedInvId)
-                if (existing != null && existing.invoice.status == InvoiceStatus.DRAFT.name) {
+                if (
+                    existing != null &&
+                    existing.invoice.status == InvoiceStatus.DRAFT.name &&
+                    existing.invoice.invoiceType == InvoiceType.PURCHASE.name
+                ) {
                     _activeInvoiceId.value = savedInvId
                     _activeSectionId.value = savedSecId
                         ?: existing.sections.maxByOrNull { it.section.sectionOrder }?.section?.id
@@ -128,9 +170,12 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            // Fallback: check if there is any existing DRAFT invoice to resume
+            // Fallback: check if there is any existing DRAFT purchase invoice to resume
             val all = repository.allInvoicesFlow.first()
-            val latestDraft = all.firstOrNull { it.invoice.status == InvoiceStatus.DRAFT.name }
+            val latestDraft = all.firstOrNull {
+                it.invoice.status == InvoiceStatus.DRAFT.name &&
+                    it.invoice.invoiceType == InvoiceType.PURCHASE.name
+            }
             if (latestDraft != null) {
                 setActiveWorkspaceIds(
                     invoiceId = latestDraft.invoice.id,
@@ -158,14 +203,21 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
             val currentId = _activeInvoiceId.value
             if (currentId != null) {
                 val currentInv = repository.getInvoiceByIdOnce(currentId)
-                if (currentInv != null && currentInv.invoice.status == InvoiceStatus.DRAFT.name) {
+                if (
+                    currentInv != null &&
+                    currentInv.invoice.status == InvoiceStatus.DRAFT.name &&
+                    currentInv.invoice.invoiceType == InvoiceType.PURCHASE.name
+                ) {
                     _currentScreen.value = AppScreen.PURCHASE_WORKSPACE
                     return@launch
                 }
             }
-            // Look for any suspended/draft invoice first
+            // Look for any suspended/draft purchase invoice first
             val all = repository.allInvoicesFlow.first()
-            val latestDraft = all.firstOrNull { it.invoice.status == InvoiceStatus.DRAFT.name }
+            val latestDraft = all.firstOrNull {
+                it.invoice.status == InvoiceStatus.DRAFT.name &&
+                    it.invoice.invoiceType == InvoiceType.PURCHASE.name
+            }
             if (latestDraft != null) {
                 setActiveWorkspaceIds(
                     invoiceId = latestDraft.invoice.id,
@@ -223,12 +275,16 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
         initialPrice: Double = 4000.0
     ) {
         viewModelScope.launch {
-            // If the currently active invoice is an empty DRAFT (0 weights), reuse it instead of creating duplicate empty drafts
             val currentId = _activeInvoiceId.value
             if (currentId != null && customer == null) {
                 val existing = repository.getInvoiceByIdOnce(currentId)
                 val totalWeights = existing?.sections?.sumOf { it.weights.size } ?: -1
-                if (existing != null && existing.invoice.status == InvoiceStatus.DRAFT.name && totalWeights == 0) {
+                if (
+                    existing != null &&
+                    existing.invoice.status == InvoiceStatus.DRAFT.name &&
+                    existing.invoice.invoiceType == InvoiceType.PURCHASE.name &&
+                    totalWeights == 0
+                ) {
                     setActiveWorkspaceIds(
                         invoiceId = existing.invoice.id,
                         sectionId = existing.sections.firstOrNull()?.section?.id
@@ -243,10 +299,6 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /**
-     * Suspends (holds) the current draft invoice with all its data preserved in Room,
-     * and immediately opens a brand-new blank invoice so the merchant can serve another customer.
-     */
     fun suspendCurrentInvoiceAndStartNew() {
         viewModelScope.launch {
             val currentInv = activeInvoiceWithCalc.value?.details?.invoice
@@ -297,10 +349,16 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun openExistingInvoiceInWorkspace(invoiceId: Long) {
         viewModelScope.launch {
-            val existing = repository.getInvoiceByIdOnce(invoiceId)
+            val existing = repository.getInvoiceByIdOnce(invoiceId) ?: return@launch
+            if (existing.invoice.invoiceType == InvoiceType.SALE.name) {
+                // Sales invoices are bulk-weight invoices; navigate to Invoices screen if not already there
+                _currentScreen.value = AppScreen.INVOICES
+                showMessage("فاتورة البيع #${existing.invoice.invoiceNumber} بالوزن الكلي المقطوع")
+                return@launch
+            }
             setActiveWorkspaceIds(
                 invoiceId = invoiceId,
-                sectionId = existing?.sections?.minByOrNull { it.section.sectionOrder }?.section?.id
+                sectionId = existing.sections.minByOrNull { it.section.sectionOrder }?.section?.id
             )
             _keypadInput.value = ""
             _currentScreen.value = AppScreen.PURCHASE_WORKSPACE
@@ -446,11 +504,6 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /**
-     * Approves & saves the active invoice, then immediately clears/resets the purchase workspace
-     * by opening a brand-new blank invoice (or resuming another held draft if any) so the screen
-     * does not keep old data after saving!
-     */
     fun approveActiveInvoice() {
         val inv = activeInvoiceWithCalc.value ?: return
         if (inv.calc.totalBagCount == 0) {
@@ -460,14 +513,116 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val approvedNum = inv.details.invoice.invoiceNumber
             repository.approveInvoice(inv.details.invoice)
-            // Clear the workspace and prepare a fresh blank invoice ready for the next customer
             createBlankDraftInvoiceInternal(
                 customer = null,
                 initialProduct = null,
                 initialUnit = null,
                 initialPrice = 4000.0
             )
-            showMessage("تم حفظ واعتماد الفاتورة #$approvedNum وتفريغ الشاشة لفاتورة جديدة")
+            showMessage("تم حفظ واعتماد الفاتورة #$approvedNum وإضافتها لرصيد الشونة")
+        }
+    }
+
+    // --- Live Warehouse & Bulk Sales Actions ---
+    @Suppress("LongParameterList")
+    fun createBulkSaleInvoice(
+        customer: CustomerEntity?,
+        customCustomerName: String,
+        product: ProductEntity,
+        unit: PricingUnitEntity,
+        bulkWeightKg: Double,
+        sellingUnitPrice: Double,
+        costPerKgSnapshot: Double,
+        saleExpenses: Double,
+        initialPaidAmount: Double,
+        paymentMethod: String,
+        notes: String,
+        onCreated: ((Long) -> Unit)? = null
+    ) {
+        if (bulkWeightKg <= 0.0) {
+            showMessage("يرجى إدخال وزن كلي صحيح أكبر من صفر")
+            return
+        }
+        if (sellingUnitPrice <= 0.0) {
+            showMessage("يرجى إدخال سعر بيع الوحدة")
+            return
+        }
+        viewModelScope.launch {
+            val invoiceId = repository.createBulkSaleInvoice(
+                customer = customer,
+                customCustomerName = customCustomerName,
+                product = product,
+                unit = unit,
+                bulkWeightKg = bulkWeightKg,
+                sellingUnitPrice = sellingUnitPrice,
+                costPerKgSnapshot = costPerKgSnapshot,
+                saleExpenses = saleExpenses,
+                initialPaidAmount = initialPaidAmount,
+                paymentMethod = paymentMethod,
+                notes = notes
+            )
+            val created = repository.getInvoiceByIdOnce(invoiceId)
+            val invNum = created?.invoice?.invoiceNumber ?: invoiceId.toString()
+            showMessage("تم إصدار فاتورة البيع والتوريد #$invNum وخصم ${CalculationEngine.formatWeight(bulkWeightKg)} كجم من الشونة")
+            onCreated?.invoke(invoiceId)
+        }
+    }
+
+    fun recordShrinkageAdjustment(
+        productId: Long?,
+        productName: String,
+        weightLossKg: Double,
+        referencePurchasedKg: Double,
+        reason: String
+    ) {
+        if (weightLossKg <= 0.0) {
+            showMessage("يرجى إدخال وزن الجفاف/العجز بالكيلوجرام")
+            return
+        }
+        viewModelScope.launch {
+            repository.recordInventoryAdjustment(
+                productId = productId,
+                productName = productName,
+                adjustmentType = ShrinkageAdjustmentType.MANUAL_SHRINKAGE,
+                weightLossKg = weightLossKg,
+                referencePurchasedKg = referencePurchasedKg,
+                reason = reason.ifBlank { "تسوية جفاف وغربلة يدوية" }
+            )
+            showMessage("تم خصم ${CalculationEngine.formatWeight(weightLossKg)} كجم عجز/جفاف من محصول $productName")
+        }
+    }
+
+    fun zeroOutBatchStock(
+        productId: Long?,
+        productName: String,
+        remainingBookStockKg: Double,
+        referencePurchasedKg: Double,
+        notes: String
+    ) {
+        if (remainingBookStockKg <= 0.0) {
+            showMessage("رصيد المحصول صفر بالفعل في الشونة")
+            return
+        }
+        viewModelScope.launch {
+            repository.recordInventoryAdjustment(
+                productId = productId,
+                productName = productName,
+                adjustmentType = ShrinkageAdjustmentType.BATCH_ZERO_OUT,
+                weightLossKg = remainingBookStockKg,
+                referencePurchasedKg = referencePurchasedKg,
+                reason = notes.ifBlank { "تصفير الدفعة عند نفاد المخزن فعلياً (فروق جفاف طبيعي)" }
+            )
+            val pct = if (referencePurchasedKg > 0.0) {
+                CalculationEngine.formatNumber((remainingBookStockKg / referencePurchasedKg) * 100.0, 2)
+            } else "0"
+            showMessage("تم تصفير دفعة $productName وتسجيل ${CalculationEngine.formatWeight(remainingBookStockKg)} كجم كعجز جفاف ($pct%)")
+        }
+    }
+
+    fun deleteInventoryAdjustment(adjustment: InventoryAdjustmentEntity) {
+        viewModelScope.launch {
+            repository.deleteInventoryAdjustment(adjustment)
+            showMessage("تم إلغاء حركة تسوية الجفاف (${CalculationEngine.formatWeight(adjustment.weightLossKg)} كجم) وإعادتها للشونة")
         }
     }
 

@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -18,9 +20,10 @@ import kotlinx.coroutines.launch
         WeightEntity::class,
         PaymentEntity::class,
         AuditLogEntity::class,
+        InventoryAdjustmentEntity::class,
         AppSettingsEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class GrainDatabase : RoomDatabase() {
@@ -30,6 +33,31 @@ abstract class GrainDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: GrainDatabase? = null
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE invoices ADD COLUMN invoiceType TEXT NOT NULL DEFAULT 'PURCHASE'")
+                db.execSQL("ALTER TABLE invoices ADD COLUMN saleExpenses REAL NOT NULL DEFAULT 0.0")
+                db.execSQL("ALTER TABLE invoices ADD COLUMN costPerKgSnapshot REAL NOT NULL DEFAULT 0.0")
+                db.execSQL("ALTER TABLE app_settings ADD COLUMN profitCalculationMode TEXT NOT NULL DEFAULT 'WITH_EXPENSES'")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `inventory_adjustments` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `productId` INTEGER,
+                        `productNameSnapshot` TEXT NOT NULL,
+                        `adjustmentType` TEXT NOT NULL,
+                        `weightLossKg` REAL NOT NULL,
+                        `referencePurchasedKg` REAL NOT NULL,
+                        `reason` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`productId`) REFERENCES `products`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_inventory_adjustments_productId` ON `inventory_adjustments` (`productId`)")
+            }
+        }
+
         fun getInstance(context: Context): GrainDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -37,6 +65,7 @@ abstract class GrainDatabase : RoomDatabase() {
                     GrainDatabase::class.java,
                     "grain_trade_manager.db"
                 )
+                    .addMigrations(MIGRATION_2_3)
                     .fallbackToDestructiveMigration(true)
                     .build()
                 INSTANCE = instance
@@ -55,7 +84,6 @@ abstract class GrainDatabase : RoomDatabase() {
                 currentSettings.merchantName == "شونة ومضرب البركة لتجارة الحبوب والغلال" ||
                 currentSettings.merchantPhone == "01001234567"
             ) {
-                // Clean out old pre-filled demo merchant info so fields are empty and ready to fill
                 dao.saveSettings(
                     currentSettings.copy(
                         merchantName = "",

@@ -143,6 +143,22 @@ interface GrainDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAuditLog(log: AuditLogEntity): Long
 
+    // --- Inventory Adjustments (Shrinkage / Dryness / Batch Zero-Out) ---
+    @Query("SELECT * FROM inventory_adjustments ORDER BY createdAt DESC, id DESC")
+    fun observeInventoryAdjustments(): Flow<List<InventoryAdjustmentEntity>>
+
+    @Query("SELECT * FROM inventory_adjustments ORDER BY id ASC")
+    suspend fun getAllInventoryAdjustmentsOnce(): List<InventoryAdjustmentEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertInventoryAdjustment(adjustment: InventoryAdjustmentEntity): Long
+
+    @Delete
+    suspend fun deleteInventoryAdjustment(adjustment: InventoryAdjustmentEntity)
+
+    @Query("DELETE FROM inventory_adjustments")
+    suspend fun clearAllInventoryAdjustments()
+
     // --- App Settings ---
     @Query("SELECT * FROM app_settings WHERE id = 1 LIMIT 1")
     fun observeSettings(): Flow<AppSettingsEntity?>

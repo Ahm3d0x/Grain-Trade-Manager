@@ -99,6 +99,7 @@ import com.example.R
 import com.example.data.local.AppSettingsEntity
 import com.example.data.local.PricingUnitEntity
 import com.example.data.local.ProductEntity
+import com.example.data.local.ProfitCalculationMode
 import com.example.domain.CalculationEngine
 import com.example.security.HardwareIdProvider
 import com.example.security.LicenseManager
@@ -721,12 +722,104 @@ private fun MerchantDefinitionsTabContent(
     var currencySymbol by remember(settings) { mutableStateOf(settings.currencySymbol) }
     var startingInvNum by remember(settings) { mutableStateOf(settings.startingInvoiceNumber.toString()) }
     var footerNotes by remember(settings) { mutableStateOf(settings.invoiceFooterNotes) }
+    var profitMode by remember(settings.profitCalculationMode) {
+        mutableStateOf(
+            runCatching { ProfitCalculationMode.valueOf(settings.profitCalculationMode) }
+                .getOrDefault(ProfitCalculationMode.WITH_EXPENSES)
+        )
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.5.dp, EmeraldPrimary.copy(alpha = 0.5f), RoundedCornerShape(16.dp)),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "نظام حساب صافي الربح في الشونة والمبيعات",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = EmeraldPrimary
+                    )
+                    Text(
+                        text = "اختر طريقة حساب صافي الربح المعتمدة في فواتير البيع والتوريد وتقارير الشونة:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    ProfitCalculationMode.entries.forEach { mode ->
+                        val isSelected = profitMode == mode
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isSelected) EmeraldLight else MaterialTheme.colorScheme.background,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(
+                                    width = if (isSelected) 1.5.dp else 1.dp,
+                                    color = if (isSelected) EmeraldPrimary else WheatCardBorder,
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .clickable {
+                                    profitMode = mode
+                                    onSaveSettings(
+                                        settings.copy(
+                                            merchantName = merchantName.trim(),
+                                            merchantPhone = merchantPhone.trim(),
+                                            merchantAddress = merchantAddress.trim(),
+                                            currencySymbol = currencySymbol.trim().ifBlank { "ج.م" },
+                                            startingInvoiceNumber = startingInvNum.toIntOrNull() ?: settings.startingInvoiceNumber,
+                                            invoiceFooterNotes = footerNotes.trim(),
+                                            profitCalculationMode = mode.name
+                                        )
+                                    )
+                                }
+                                .testTag("profit_mode_option_${mode.name}")
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = if (isSelected) EmeraldPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = mode.labelAr,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) EmeraldDark else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = mode.descriptionAr,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         item {
             Card(
                 modifier = Modifier
@@ -807,7 +900,8 @@ private fun MerchantDefinitionsTabContent(
                                     merchantAddress = merchantAddress.trim(),
                                     currencySymbol = currencySymbol.trim().ifBlank { "ج.م" },
                                     startingInvoiceNumber = startingInvNum.toIntOrNull() ?: settings.startingInvoiceNumber,
-                                    invoiceFooterNotes = footerNotes.trim()
+                                    invoiceFooterNotes = footerNotes.trim(),
+                                    profitCalculationMode = profitMode.name
                                 )
                             )
                         },
@@ -1325,12 +1419,83 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                     }
 
                     Text(
-                        text = "أحد الأنظمة الرقمية المتكاملة الصادرة تحت مظلة شركة UltraSoft. صُمم خصيصًا لإدارة عمليات شراء وتوريد ووزن الحبوب والغلال والشُّوَن بدقة وسرعة فائقة، مع التجميع الخماسي الآلي للأوزان، وتقسيم الفاتورة لأكثر من قسم وتسعير، وإصدار فواتير A4 جاهزة للطباعة والمشاركة.",
+                        text = "أحد الأنظمة الرقمية المتكاملة الصادرة تحت مظلة شركة UltraSoft. صُمم خصيصًا لإدارة الدورة الكاملة لتجارة الحبوب والغلال والشُّوَن: بدءًا من الشراء والوزن بالتجميع الخماسي الآلي، مرورًا بإدارة المخزن الحي (الشونة) وتسويات الجفاف والغربلة، وصولًا إلى فواتير البيع والتوريد للمطاحن وحساب صافي الربح بالرسوم البيانية التفاعلية وإصدار فواتير A4 جاهزة للطباعة والمشاركة.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
                         lineHeight = 19.sp
                     )
+                }
+            }
+        }
+
+        // 1.5. What's New in Version 3.0 Documentation Card
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.5.dp, WheatGold, RoundedCornerShape(16.dp)),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "توثيق مميزات الإصدار الجديد (v3.0)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = EmeraldPrimary
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = WheatGoldLight
+                        ) {
+                            Text(
+                                text = "الإصدار 3.0",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = WheatGold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    val v3ReleaseHighlights = listOf(
+                        "شاشة المخزن الحي (الشونة): عرض فوري للكميات المتاحة من كل محصول بالطن والأردب والكيلوجرام مع حساب متوسط تكلفة الشراء المرجح وقيمة البضاعة المخزنة.",
+                        "فواتير البيع والتوريد للمطاحن والتجار: إصدار فواتير بيع بالوزن الكلي المقطوع مباشرة، وخصم الكمية آليًا من الشونة، وحساب صافي الربح في كل نقلة فورًا.",
+                        "معالجة عجز الجفاف والغربلة (Shrinkage): دعم (تسوية الجفاف اليدوية) و(تصفير الدفعة آليًا عند نفاد المخزن) مع حساب نسبة الهالك المئوية لكل محصول.",
+                        "نظامان مرنان لحساب صافي الربح من الإعدادات: إما (شامل المصاريف من نقل ومشال وعمولة) أو (فرق السعر المباشر فقط).",
+                        "تقارير الرسوم البيانية التفاعلية لأرباح الحبوب: 3 رسوم بيانية تفاعلية (أعمدة الأرباح، مقارنة الإيراد والتكلفة، ونسب المساهمة الدائرية) مع فلترة بالتاريخ المخصص (من تاريخ - إلى تاريخ)."
+                    )
+
+                    v3ReleaseHighlights.forEach { itemText ->
+                        Row(
+                            verticalAlignment = Alignment.Top,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = WheatGold,
+                                modifier = Modifier
+                                    .padding(top = 2.dp)
+                                    .size(16.dp)
+                            )
+                            Text(
+                                text = itemText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                lineHeight = 18.sp
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1648,25 +1813,36 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                             "ميزة تعليق الفاتورة الحالية وبدء فاتورة جديدة لعميل آخر، مع إمكانية التبديل بين الفواتير المعلقة واستكمالها.",
                             "تفريغ تلقائي لشاشة الوزن بعد الضغط على حفظ واعتماد الفاتورة لتكون جاهزة لاستقبال فاتورة جديدة فورًا."
                         ),
-                        "3. الطباعة الاحترافية وتصدير الـ PDF والواتساب" to listOf(
-                            "تصميم فاتورة A4 رسمية تستوعب حتى 10 أعمدة أوزان جنبًا إلى جنب في الصف الواحد، مع توزيع متساوٍ لعرض الأعمدة.",
+                        "3. شاشة المخزن الحي (الشونة) وفواتير البيع والتوريد" to listOf(
+                            "متابعة لحظية لرصيد الشونة من كل محصول بالكيلوجرام والطن والوحدة القياسية (الأردب) مع حساب متوسط تكلفة الشراء المرجح.",
+                            "إصدار فواتير بيع وتوريد للمطاحن وتجار الجملة بنظام الوزن الكلي المقطوع دون الحاجة لإدخال شكاير فردية.",
+                            "خصم آلي للكميات المباعة من رصيد الشونة وحساب فوري لصافي مكسب التاجر في كل نقلة بيع مع تسجيل الدفعة المحصلة."
+                        ),
+                        "4. معالجة عجز الجفاف والغربلة ونظامي حساب الأرباح" to listOf(
+                            "تسوية جفاف يدوية في أي وقت لخصم وزن الرطوبة أو الغربلة من رصيد المحصول مع توثيق السبب والتاريخ.",
+                            "زر تصفير الدفعة عند نفاد المخزن فعليًا لتحويل الرصيد المتبقي دفتريًا إلى عجز جفاف وحساب نسبة الهالك المئوية بدقة.",
+                            "نظامان مرنان لحساب صافي الربح يحددهما التاجر من الإعدادات: إما (شامل مصاريف النقلة من نقل ومشال وعمولة) أو (فرق السعر المباشر)."
+                        ),
+                        "5. الرسوم البيانية التفاعلية لأرباح الحبوب والتقارير" to listOf(
+                            "رسوم بيانية تفاعلية توضح إجمالي صافي الربح لكل نوع من أنواع الحبوب (أعمدة الأرباح، مقارنة الإيراد والتكلفة، ونسب المساهمة الدائرية).",
+                            "تحديد الفترة الزمنية بمرونة عالية عبر الفلاتر السريعة أو اختيار فترة مخصصة بالتاريخ (من تاريخ – إلى تاريخ).",
+                            "إمكانية الضغط على أي محصول في الرسم البياني لعرض بطاقة فحص تفصيلية (الوزن المباع، الإيراد، التكلفة، المصاريف، متوسط الربح للطن، وهامش الربح)."
+                        ),
+                        "6. الطباعة الاحترافية وتصدير الـ PDF والواتساب" to listOf(
+                            "تصميم فاتورة A4 رسمية (للشراء أو البيع/التوريد) تستوعب حتى 10 أعمدة أوزان جنبًا إلى جنب مع توزيع متساوٍ لعرض الأعمدة.",
                             "ترويسة فاتحة متوافقة تمامًا مع طابعات الأبيض والأسود والليزر، مع حماية الجداول من الانقسام بين الصفحات.",
                             "تسمية ملف الفاتورة تلقائيًا باسم: (اسم العميل - نوع الحبوب - التاريخ).",
                             "حفظ الفاتورة مباشرة على الهاتف في مجلد التنزيلات أو إرسالها مباشرة عبر واتساب أو طباعتها بضغطة واحدة."
                         ),
-                        "4. إدارة العملاء وكشوف الحساب والمدفوعات" to listOf(
+                        "7. إدارة العملاء وكشوف الحساب والمدفوعات" to listOf(
                             "حسابات دقيقة بالأرقام الصحيحة (بالكيلوجرام الصافي وبدون قروش أو كسور عشرية مزعجة).",
-                            "سجل متكامل لكل عميل يعرض جميع الفواتير التي أخذها، وإجمالي الأوزان، والمبالغ المستحقة، والمدفوعات، والمتبقي.",
+                            "سجل متكامل لكل عميل أو مطحن يعرض جميع الفواتير، وإجمالي الأوزان، والمبالغ المستحقة، والمدفوعات، والمتبقي.",
                             "القدرة على فتح أي فاتورة من سجل العميل لتعديلها أو طباعتها أو إرسالها عبر واتساب أو حذفها مع تأكيد الحذف.",
                             "تسجيل دفعات السداد الكلي أو الجزئي (نقدي، تحويل بنكي، محفظة إلكترونية، شيك) وتسوية الفروق."
                         ),
-                        "5. التقارير والإحصائيات الشاملة" to listOf(
-                            "تقارير مفصلة حسب الفترة الزمنية (اليوم، الأسبوع، الشهر، السنة، أو كل الفترات).",
-                            "إحصائيات الأوزان وقيم المشتريات لكل صنف حبوب على حدة، وتقارير أرصدة العملاء، وسجل حركة المدفوعات."
-                        ),
-                        "6. التعريفات والنسخ الاحتياطي والتحديثات" to listOf(
+                        "8. التعريفات والنسخ الاحتياطي الشامل والتحديثات" to listOf(
                             "مرونة كاملة في تعريف أنواع الحبوب ووحدات التسعير وأوزانها القياسية (أردب، طن، قنطار، كيلو) وبيانات المكتب.",
-                            "العمل الكامل بدون إنترنت (Offline-First) مع تصدير واستعادة نسخة احتياطية شاملة لقاعدة البيانات.",
+                            "العمل الكامل بدون إنترنت (Offline-First) مع تصدير واستعادة نسخة احتياطية شاملة تضم الفواتير والمخزن والمبيعات وتسويات الجفاف.",
                             "نظام إشعارات تلقائي ينبه المستخدم فور نزول تحديث جديد للبرنامج مع رابط مباشر لتنزيل الإصدار الأحدث."
                         )
                     )

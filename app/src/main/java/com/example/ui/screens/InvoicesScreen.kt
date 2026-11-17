@@ -55,18 +55,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.local.AppSettingsEntity
 import com.example.data.local.InvoiceStatus
+import com.example.data.local.InvoiceType
 import com.example.data.local.PaymentRecordType
 import com.example.data.local.PaymentStatus
 import com.example.data.local.ProductEntity
+import com.example.data.local.ProfitCalculationMode
 import com.example.domain.CalculationEngine
+import com.example.ui.theme.EmeraldDark
 import com.example.ui.theme.EmeraldLight
 import com.example.ui.theme.EmeraldPrimary
+import com.example.ui.theme.StatusPaidBg
 import com.example.ui.theme.StatusPaidGreen
 import com.example.ui.theme.StatusSettlementPurple
 import com.example.ui.theme.StatusUnpaidBg
 import com.example.ui.theme.StatusUnpaidRed
 import com.example.ui.theme.WheatCardBorder
 import com.example.ui.theme.WheatGold
+import com.example.ui.theme.WheatGoldLight
 import com.example.ui.viewmodel.InvoiceWithCalc
 import com.example.util.PdfInvoiceExporter
 import java.text.SimpleDateFormat
@@ -85,6 +90,7 @@ fun InvoicesScreen(
 ) {
     val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
+    var selectedTypeFilter by remember { mutableStateOf<InvoiceType?>(null) }
     var selectedStatusFilter by remember { mutableStateOf<String?>(null) }
     var selectedPaymentFilter by remember { mutableStateOf<PaymentStatus?>(null) }
     var selectedProductFilter by remember { mutableStateOf<String?>(null) }
@@ -95,9 +101,15 @@ fun InvoicesScreen(
     var deleteTargetInvoice by remember { mutableStateOf<InvoiceWithCalc?>(null) }
     var expandedInvoiceId by remember { mutableStateOf<Long?>(null) }
 
+    val profitMode = remember(settings.profitCalculationMode) {
+        runCatching { ProfitCalculationMode.valueOf(settings.profitCalculationMode) }
+            .getOrDefault(ProfitCalculationMode.WITH_EXPENSES)
+    }
+
     val filteredInvoices = remember(
         invoices,
         searchQuery,
+        selectedTypeFilter,
         selectedStatusFilter,
         selectedPaymentFilter,
         selectedProductFilter
@@ -110,12 +122,13 @@ fun InvoicesScreen(
                 inv.customerNameSnapshot.contains(searchQuery, ignoreCase = true) ||
                 inv.customerPhoneSnapshot.contains(searchQuery, ignoreCase = true)
 
+            val matchesType = selectedTypeFilter == null || inv.invoiceType == selectedTypeFilter?.name
             val matchesStatus = selectedStatusFilter == null || inv.status == selectedStatusFilter
             val matchesPayment = selectedPaymentFilter == null || calc.paymentStatus == selectedPaymentFilter
             val matchesProduct = selectedProductFilter == null ||
                 calc.productSummaries.any { it.productName == selectedProductFilter }
 
-            matchesQuery && matchesStatus && matchesPayment && matchesProduct
+            matchesQuery && matchesType && matchesStatus && matchesPayment && matchesProduct
         }
     }
 
@@ -145,11 +158,54 @@ fun InvoicesScreen(
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        label = { Text("بحث برقم الفاتورة، اسم العميل، أو الهاتف") },
+                        label = { Text("بحث برقم الفاتورة، اسم العميل/المطحن، أو الهاتف") },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("invoices_search_input")
                     )
+
+                    // Invoice Type Filter (All | Purchase | Sale)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        item {
+                            FilterChip(
+                                selected = selectedTypeFilter == null,
+                                onClick = { selectedTypeFilter = null },
+                                label = { Text("كل العمليات (${invoices.size})", softWrap = false, maxLines = 1) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = EmeraldPrimary,
+                                    selectedLabelColor = Color.White
+                                )
+                            )
+                        }
+                        item {
+                            val purchaseCount = invoices.count { !it.calc.isSaleInvoice }
+                            FilterChip(
+                                selected = selectedTypeFilter == InvoiceType.PURCHASE,
+                                onClick = {
+                                    selectedTypeFilter = if (selectedTypeFilter == InvoiceType.PURCHASE) null else InvoiceType.PURCHASE
+                                },
+                                label = { Text("فواتير شراء ($purchaseCount)", softWrap = false, maxLines = 1) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = EmeraldPrimary,
+                                    selectedLabelColor = Color.White
+                                )
+                            )
+                        }
+                        item {
+                            val saleCount = invoices.count { it.calc.isSaleInvoice }
+                            FilterChip(
+                                selected = selectedTypeFilter == InvoiceType.SALE,
+                                onClick = {
+                                    selectedTypeFilter = if (selectedTypeFilter == InvoiceType.SALE) null else InvoiceType.SALE
+                                },
+                                label = { Text("فواتير بيع وتوريد ($saleCount)", softWrap = false, maxLines = 1) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = WheatGold,
+                                    selectedLabelColor = Color.White
+                                )
+                            )
+                        }
+                    }
 
                     // Status & Payment Filters
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -160,7 +216,7 @@ fun InvoicesScreen(
                                     selectedStatusFilter = null
                                     selectedPaymentFilter = null
                                 },
-                                label = { Text("الكل (${invoices.size})", softWrap = false, maxLines = 1) },
+                                label = { Text("كل الحالات", softWrap = false, maxLines = 1) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = EmeraldPrimary,
                                     selectedLabelColor = Color.White
@@ -245,6 +301,7 @@ fun InvoicesScreen(
             items(filteredInvoices, key = { it.details.invoice.id }) { item ->
                 val inv = item.details.invoice
                 val calc = item.calc
+                val isSale = calc.isSaleInvoice
                 val isExpanded = expandedInvoiceId == inv.id
 
                 Card(
@@ -258,7 +315,7 @@ fun InvoicesScreen(
                         modifier = Modifier.padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        // Top Row: Invoice Number, Status Badges, and Prominent Delete Button
+                        // Top Row: Invoice Number & Status Badges
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -268,11 +325,15 @@ fun InvoicesScreen(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Surface(shape = RoundedCornerShape(8.dp), color = EmeraldLight) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isSale) WheatGoldLight else EmeraldLight
+                                ) {
                                     Text(
-                                        text = "فاتورة #${inv.invoiceNumber}",
+                                        text = if (isSale) "فاتورة بيع #${inv.invoiceNumber}" else "فاتورة #${inv.invoiceNumber}",
                                         style = MaterialTheme.typography.labelLarge,
-                                        color = EmeraldPrimary,
+                                        color = if (isSale) EmeraldDark else EmeraldPrimary,
+                                        fontWeight = FontWeight.Bold,
                                         softWrap = false,
                                         maxLines = 1,
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
@@ -306,7 +367,8 @@ fun InvoicesScreen(
                                 Text(
                                     text = prods.ifBlank { "بدون أوزان" },
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = EmeraldPrimary
+                                    color = EmeraldPrimary,
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
                             Column(horizontalAlignment = Alignment.End) {
@@ -324,11 +386,45 @@ fun InvoicesScreen(
                             }
                         }
 
+                        if (isSale) {
+                            val saleProfit = calc.getEffectiveProfit(profitMode)
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (saleProfit >= 0) StatusPaidBg else StatusUnpaidBg,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "وزن مقطوع (${CalculationEngine.formatNumber(calc.totalWeightKg / 1000.0, 3)} طن)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = EmeraldDark
+                                    )
+                                    Text(
+                                        text = "صافي الربح: ${if (saleProfit >= 0) "+" else ""}${CalculationEngine.formatCurrency(saleProfit, settings.currencySymbol)}",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (saleProfit >= 0) StatusPaidGreen else StatusUnpaidRed
+                                    )
+                                }
+                            }
+                        }
+
                         if (isExpanded) {
                             HorizontalDivider(color = WheatCardBorder)
                             calc.sectionCalculations.forEach { secCalc ->
+                                val weightLabel = if (isSale) {
+                                    "وزن مقطوع (${CalculationEngine.formatWeight(secCalc.totalWeightKg)} كجم)"
+                                } else {
+                                    "${secCalc.bagCount} شكارة (${CalculationEngine.formatWeight(secCalc.totalWeightKg)} كجم)"
+                                }
                                 Text(
-                                    text = "• القسم ${secCalc.section.sectionOrder} (${secCalc.section.productNameSnapshot}): ${secCalc.bagCount} شكارة (${CalculationEngine.formatWeight(secCalc.totalWeightKg)} كجم) × ${CalculationEngine.formatNumber(secCalc.section.unitPrice)} / ${secCalc.section.unitNameSnapshot} = ${CalculationEngine.formatCurrency(secCalc.sectionTotalAmount, settings.currencySymbol)}",
+                                    text = "• القسم ${secCalc.section.sectionOrder} (${secCalc.section.productNameSnapshot}): $weightLabel × ${CalculationEngine.formatNumber(secCalc.section.unitPrice)} / ${secCalc.section.unitNameSnapshot} = ${CalculationEngine.formatCurrency(secCalc.sectionTotalAmount, settings.currencySymbol)}",
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
@@ -351,21 +447,23 @@ fun InvoicesScreen(
 
                         HorizontalDivider(color = WheatCardBorder)
 
-                        // Row 1 of Actions: Open & Edit | Record Payment | Delete Invoice (Explicitly visible outside!)
+                        // Row 1 of Actions: Open & Edit (for Purchases) | Record Payment | Delete Invoice
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Button(
-                                onClick = { onOpenInWorkspace(inv.id) },
-                                colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
-                                modifier = Modifier.weight(1.2f).height(42.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                            ) {
-                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("فتح وتعديل", style = MaterialTheme.typography.labelMedium, softWrap = false, maxLines = 1)
+                            if (!isSale) {
+                                Button(
+                                    onClick = { onOpenInWorkspace(inv.id) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                                    modifier = Modifier.weight(1.2f).height(42.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("فتح وتعديل", style = MaterialTheme.typography.labelMedium, softWrap = false, maxLines = 1)
+                                }
                             }
 
                             OutlinedButton(

@@ -220,7 +220,10 @@ object PdfInvoiceExporter {
         canvas.drawRoundRect(merchantRect, 6f, 6f, headerBgPaint)
         canvas.drawRoundRect(merchantRect, 6f, 6f, strongBorderPaint)
 
-        val headerTitle = settings.merchantName.ifBlank { "فاتورة شراء وتوريد حبوب وغلال" }
+        val isSale = calc.isSaleInvoice
+        val headerTitle = settings.merchantName.ifBlank {
+            if (isSale) "فاتورة بيع وتوريد حبوب وغلال" else "فاتورة شراء وتوريد حبوب وغلال"
+        }
         canvas.drawText(headerTitle, rightEdge - 14f, currentY + 24f, headerTitlePaint)
         val contactParts = buildList {
             if (settings.merchantPhone.isNotBlank()) add("الهاتف: ${settings.merchantPhone}")
@@ -238,7 +241,11 @@ object PdfInvoiceExporter {
             headerSubPaint
         )
         canvas.drawText(
-            "مستند رسمي لتوريد ووزن الحبوب والغلال (الأوزان بالكيلوجرام الصافي)",
+            if (isSale) {
+                "مستند رسمي لبيع وتوريد الحبوب والغلال بالوزن الكلي المقطوع"
+            } else {
+                "مستند رسمي لتوريد ووزن الحبوب والغلال (الأوزان بالكيلوجرام الصافي)"
+            },
             rightEdge - 14f,
             currentY + 57f,
             headerSubPaint
@@ -246,7 +253,7 @@ object PdfInvoiceExporter {
 
         val statusAr = if (details.invoice.status == InvoiceStatus.APPROVED.name) "معتمدة" else "مسودة"
         canvas.drawText(
-            "فاتورة شراء #${details.invoice.invoiceNumber}",
+            if (isSale) "فاتورة بيع #${details.invoice.invoiceNumber}" else "فاتورة شراء #${details.invoice.invoiceNumber}",
             leftEdge + 14f,
             currentY + 26f,
             headerLeftBadgePaint
@@ -280,13 +287,17 @@ object PdfInvoiceExporter {
 
         // Right column (Customer info)
         canvas.drawText(
-            "اسم العميل / المورد: ${details.invoice.customerNameSnapshot}",
+            if (isSale) {
+                "اسم المشتري / المطحن: ${details.invoice.customerNameSnapshot}"
+            } else {
+                "اسم العميل / المورد: ${details.invoice.customerNameSnapshot}"
+            },
             rightEdge - 10f,
             currentY + 16f,
             boldRightPaint
         )
         canvas.drawText(
-            "رقم هاتف العميل: ${details.invoice.customerPhoneSnapshot.ifBlank { "غير مسجل" }}",
+            "رقم الهاتف: ${details.invoice.customerPhoneSnapshot.ifBlank { "غير مسجل" }}",
             rightEdge - 10f,
             currentY + 40f,
             regularRightPaint
@@ -300,7 +311,11 @@ object PdfInvoiceExporter {
             boldRightPaint
         )
         canvas.drawText(
-            "عدد الأقسام: ${calc.sectionCalculations.size} قسم  |  إجمالي الشكاير: ${calc.totalBagCount} شكارة",
+            if (isSale) {
+                "نظام الوزن: وزن كلي مقطوع (${CalculationEngine.formatNumber(calc.totalWeightKg / 1000.0, 3)} طن)"
+            } else {
+                "عدد الأقسام: ${calc.sectionCalculations.size} قسم  |  إجمالي الشكاير: ${calc.totalBagCount} شكارة"
+            },
             midX - 10f,
             currentY + 40f,
             regularRightPaint
@@ -370,7 +385,7 @@ object PdfInvoiceExporter {
         // 4 Summary columns from Right to Left (whole kg and whole currency without piastres):
         val summaryColW = CONTENT_WIDTH / 4f
         val summaryLabels = listOf(
-            "إجمالي الوزن (${calc.totalBagCount} شكارة)",
+            if (isSale) "إجمالي الوزن المقطوع" else "إجمالي الوزن (${calc.totalBagCount} شكارة)",
             "إجمالي قيمة الفاتورة",
             "المبلغ المدفوع",
             "المتبقي المستحق"

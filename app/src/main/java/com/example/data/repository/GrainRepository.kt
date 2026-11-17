@@ -6,13 +6,17 @@ import com.example.data.local.AuditLogEntity
 import com.example.data.local.CustomerEntity
 import com.example.data.local.FullInvoiceDetails
 import com.example.data.local.GrainDatabase
+import com.example.data.local.InventoryAdjustmentEntity
 import com.example.data.local.InvoiceEntity
 import com.example.data.local.InvoiceSectionEntity
 import com.example.data.local.InvoiceStatus
+import com.example.data.local.InvoiceType
 import com.example.data.local.PaymentEntity
 import com.example.data.local.PaymentRecordType
 import com.example.data.local.PricingUnitEntity
 import com.example.data.local.ProductEntity
+import com.example.data.local.ProfitCalculationMode
+import com.example.data.local.ShrinkageAdjustmentType
 import com.example.data.local.WeightEntity
 import kotlinx.coroutines.flow.Flow
 import org.json.JSONArray
@@ -25,6 +29,7 @@ class GrainRepository(private val db: GrainDatabase) {
     val productsFlow: Flow<List<ProductEntity>> = dao.observeProducts()
     val pricingUnitsFlow: Flow<List<PricingUnitEntity>> = dao.observePricingUnits()
     val allInvoicesFlow: Flow<List<FullInvoiceDetails>> = dao.observeAllFullInvoices()
+    val inventoryAdjustmentsFlow: Flow<List<InventoryAdjustmentEntity>> = dao.observeInventoryAdjustments()
     val settingsFlow: Flow<AppSettingsEntity?> = dao.observeSettings()
 
     fun observeInvoiceById(invoiceId: Long): Flow<FullInvoiceDetails?> =
@@ -77,7 +82,7 @@ class GrainRepository(private val db: GrainDatabase) {
         dao.saveSettings(settings)
     }
 
-    // --- Invoices & Sections ---
+    // --- Invoices & Sections (Purchase & Bulk Sales) ---
     suspend fun createNewDraftInvoice(
         customer: CustomerEntity?,
         initialProduct: ProductEntity,
@@ -93,6 +98,7 @@ class GrainRepository(private val db: GrainDatabase) {
         val invoiceId = dao.insertInvoice(
             InvoiceEntity(
                 invoiceNumber = nextNumber.toString(),
+                invoiceType = InvoiceType.PURCHASE.name,
                 customerId = customer?.id,
                 customerNameSnapshot = customer?.name ?: "عميل نقدي (بدون تسجيل)",
                 customerPhoneSnapshot = customer?.phone ?: "",
@@ -117,6 +123,123 @@ class GrainRepository(private val db: GrainDatabase) {
 
         dao.saveSettings(currentSettings.copy(startingInvoiceNumber = nextNumber + 1))
         invoiceId
+    }
+
+    /**
+     * Creates an approved Bulk Sale Invoice (فاتورة بيع وتوريد بالوزن الكلي المقطوع)
+     * with cost-per-kg snapshot, optional sale expenses, and optional initial payment.
+     */
+    @Suppress("LongParameterList")
+    suspend fun createBulkSaleInvoice(
+        customer: CustomerEntity?,
+        customCustomerName: String,
+        product: ProductEntity,
+        unit: PricingUnitEntity,
+        bulkWeightKg: Double,
+        sellingUnitPrice: Double,
+        costPerKgSnapshot: Double,
+        saleExpenses: Double,
+        initialPaidAmount: Double,
+        paymentMethod: String,
+        notes: String
+    ): Long = db.withTransaction {
+        val currentSettings = dao.getSettingsOnce() ?: AppSettingsEntity()
+        val existingInvoices = dao.getAllInvoicesOnce()
+        val maxExistingNum = existingInvoices.mapNotNull { it.invoiceNumber.toIntOrNull() }.maxOrNull() ?: 0
+        val nextNumber = maxOf(currentSettings.startingInvoiceNumber, maxExistingNum + 1)
+
+        val buyerName = customer?.name
+            ?: customCustomerName.trim().ifBlank { "مطحن / تاجر جملة (نقدي)" }
+        val buyerPhone = customer?.phone ?: ""
+
+        val invoiceId = dao.insertInvoice(
+            InvoiceEntity(
+                invoiceNumber = nextNumber.toString(),
+                invoiceType = InvoiceType.SALE.name,
+                customerId = customer?.id,
+                customerNameSnapshot = buyerName,
+                customerPhoneSnapshot = buyerPhone,
+                invoiceDate = System.currentTimeMillis(),
+                status = InvoiceStatus.APPROVED.name,
+                saleExpenses = saleExpenses.coerceAtLeast(0.0),
+                costPerKgSnapshot = costPerKgSnapshot.coerceAtLeast(0.0),
+                notes = notes.trim()
+            )
+        )
+
+        val sectionId = dao.insertSection(
+            InvoiceSectionEntity(
+                invoiceId = invoiceId,
+                sectionOrder = 1,
+                productId = product.id,
+                productNameSnapshot = product.name,
+                unitId = unit.id,
+                unitNameSnapshot = unit.name,
+                unitWeightSnapshot = unit.weightKg,
+                unitPrice = sellingUnitPrice
+            )
+        )
+
+        // Store the single bulk weight entry representing the total scale weight
+        dao.insertWeight(
+            WeightEntity(
+                sectionId = sectionId,
+                sequenceNumber = 1,
+                weightKg = bulkWeightKg
+            )
+        )
+
+        if (initialPaidAmount > 0.0) {
+            dao.insertPayment(
+                PaymentEntity(
+                    invoiceId = invoiceId,
+                    amount = initialPaidAmount,
+                    type = PaymentRecordType.PAYMENT.name,
+                    paymentMethod = paymentMethod.ifBlank { "نقدي" },
+                    notes = "دفعة تحصيل عند إصدار فاتورة البيع"
+                )
+            )
+        }
+
+        dao.insertAuditLog(
+            AuditLogEntity(
+                invoiceId = invoiceId,
+                actionType = "إصدار فاتورة بيع وتوريد مقطوعة",
+                targetSection = "الشونة والمبيعات (${product.name})",
+                oldValue = "وزن مقطوع: $bulkWeightKg كجم",
+                newValue = "سعر بيع: $sellingUnitPrice / ${unit.name}",
+                reason = notes.ifBlank { "توريد وبيع من الشونة" }
+            )
+        )
+
+        dao.saveSettings(currentSettings.copy(startingInvoiceNumber = nextNumber + 1))
+        invoiceId
+    }
+
+    // --- Inventory Adjustments (Shrinkage / Dryness / Batch Zero-Out) ---
+    suspend fun recordInventoryAdjustment(
+        productId: Long?,
+        productName: String,
+        adjustmentType: ShrinkageAdjustmentType,
+        weightLossKg: Double,
+        referencePurchasedKg: Double,
+        reason: String
+    ): Long {
+        return dao.insertInventoryAdjustment(
+            InventoryAdjustmentEntity(
+                productId = productId,
+                productNameSnapshot = productName,
+                adjustmentType = adjustmentType.name,
+                weightLossKg = weightLossKg,
+                referencePurchasedKg = referencePurchasedKg,
+                reason = reason.trim().ifBlank { adjustmentType.labelAr },
+                createdAt = System.currentTimeMillis()
+            )
+        )
+    }
+
+    suspend fun deleteInventoryAdjustment(adjustment: InventoryAdjustmentEntity) {
+        dao.deleteInventoryAdjustment(adjustment)
     }
 
     suspend fun updateInvoiceHeader(
@@ -349,7 +472,7 @@ class GrainRepository(private val db: GrainDatabase) {
     // --- Backup & Restore (Offline JSON) ---
     suspend fun exportBackupJson(): String = db.withTransaction {
         val root = JSONObject()
-        root.put("version", 1)
+        root.put("version", 2)
         root.put("exportedAt", System.currentTimeMillis())
 
         val settings = dao.getSettingsOnce() ?: AppSettingsEntity()
@@ -360,6 +483,7 @@ class GrainRepository(private val db: GrainDatabase) {
             put("currencySymbol", settings.currencySymbol)
             put("startingInvoiceNumber", settings.startingInvoiceNumber)
             put("invoiceFooterNotes", settings.invoiceFooterNotes)
+            put("profitCalculationMode", settings.profitCalculationMode)
         })
 
         val customersArr = JSONArray()
@@ -405,11 +529,14 @@ class GrainRepository(private val db: GrainDatabase) {
             invoicesArr.put(JSONObject().apply {
                 put("id", i.id)
                 put("invoiceNumber", i.invoiceNumber)
+                put("invoiceType", i.invoiceType)
                 put("customerId", i.customerId ?: JSONObject.NULL)
                 put("customerNameSnapshot", i.customerNameSnapshot)
                 put("customerPhoneSnapshot", i.customerPhoneSnapshot)
                 put("invoiceDate", i.invoiceDate)
                 put("status", i.status)
+                put("saleExpenses", i.saleExpenses)
+                put("costPerKgSnapshot", i.costPerKgSnapshot)
                 put("notes", i.notes)
                 put("createdAt", i.createdAt)
                 put("updatedAt", i.updatedAt)
@@ -474,6 +601,21 @@ class GrainRepository(private val db: GrainDatabase) {
         }
         root.put("auditLogs", logsArr)
 
+        val adjustmentsArr = JSONArray()
+        dao.getAllInventoryAdjustmentsOnce().forEach { adj ->
+            adjustmentsArr.put(JSONObject().apply {
+                put("id", adj.id)
+                put("productId", adj.productId ?: JSONObject.NULL)
+                put("productNameSnapshot", adj.productNameSnapshot)
+                put("adjustmentType", adj.adjustmentType)
+                put("weightLossKg", adj.weightLossKg)
+                put("referencePurchasedKg", adj.referencePurchasedKg)
+                put("reason", adj.reason)
+                put("createdAt", adj.createdAt)
+            })
+        }
+        root.put("inventoryAdjustments", adjustmentsArr)
+
         root.toString(2)
     }
 
@@ -483,6 +625,7 @@ class GrainRepository(private val db: GrainDatabase) {
         dao.clearAllSections()
         dao.clearAllPayments()
         dao.clearAllAuditLogs()
+        dao.clearAllInventoryAdjustments()
         dao.clearAllInvoices()
         dao.clearAllPricingUnits()
         dao.clearAllProducts()
@@ -492,12 +635,16 @@ class GrainRepository(private val db: GrainDatabase) {
             dao.saveSettings(
                 AppSettingsEntity(
                     id = 1,
-                    merchantName = s.optString("merchantName", "شونة البركة لتجارة الحبوب"),
+                    merchantName = s.optString("merchantName", ""),
                     merchantPhone = s.optString("merchantPhone", ""),
                     merchantAddress = s.optString("merchantAddress", ""),
                     currencySymbol = s.optString("currencySymbol", "ج.م"),
                     startingInvoiceNumber = s.optInt("startingInvoiceNumber", 1001),
-                    invoiceFooterNotes = s.optString("invoiceFooterNotes", "")
+                    invoiceFooterNotes = s.optString("invoiceFooterNotes", ""),
+                    profitCalculationMode = s.optString(
+                        "profitCalculationMode",
+                        ProfitCalculationMode.WITH_EXPENSES.name
+                    )
                 )
             )
         }
@@ -558,11 +705,14 @@ class GrainRepository(private val db: GrainDatabase) {
                     InvoiceEntity(
                         id = o.getLong("id"),
                         invoiceNumber = o.getString("invoiceNumber"),
+                        invoiceType = o.optString("invoiceType", InvoiceType.PURCHASE.name),
                         customerId = custId,
                         customerNameSnapshot = o.optString("customerNameSnapshot", "عميل نقدي"),
                         customerPhoneSnapshot = o.optString("customerPhoneSnapshot", ""),
                         invoiceDate = o.optLong("invoiceDate", System.currentTimeMillis()),
                         status = o.optString("status", InvoiceStatus.DRAFT.name),
+                        saleExpenses = o.optDouble("saleExpenses", 0.0),
+                        costPerKgSnapshot = o.optDouble("costPerKgSnapshot", 0.0),
                         notes = o.optString("notes", ""),
                         createdAt = o.optLong("createdAt", System.currentTimeMillis()),
                         updatedAt = o.optLong("updatedAt", System.currentTimeMillis())
@@ -635,6 +785,28 @@ class GrainRepository(private val db: GrainDatabase) {
                         newValue = o.optString("newValue", ""),
                         reason = o.optString("reason", ""),
                         timestamp = o.optLong("timestamp", System.currentTimeMillis())
+                    )
+                )
+            }
+        }
+
+        root.optJSONArray("inventoryAdjustments")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val prodId = if (o.isNull("productId")) null else o.optLong("productId")
+                dao.insertInventoryAdjustment(
+                    InventoryAdjustmentEntity(
+                        id = o.getLong("id"),
+                        productId = prodId,
+                        productNameSnapshot = o.optString("productNameSnapshot", ""),
+                        adjustmentType = o.optString(
+                            "adjustmentType",
+                            ShrinkageAdjustmentType.MANUAL_SHRINKAGE.name
+                        ),
+                        weightLossKg = o.getDouble("weightLossKg"),
+                        referencePurchasedKg = o.optDouble("referencePurchasedKg", 0.0),
+                        reason = o.optString("reason", ""),
+                        createdAt = o.optLong("createdAt", System.currentTimeMillis())
                     )
                 )
             }

@@ -205,7 +205,11 @@ object AppUpdateManager {
                             )
                         }
                     } else {
-                        lastError = "أنت تستخدم أحدث إصدار حاليًا (v$currentVersionName)"
+                        lastError = if (code == 404) {
+                            "تعذر قراءة ملف التحديثات (HTTP 404) — تأكد أن مستودع GitHub عام (Public) وليس خاصًا (Private)"
+                        } else {
+                            "تعذر التحقق من التحديثات (كود الاستجابة: $code)"
+                        }
                         conn.disconnect()
                     }
                 } catch (_: Exception) {

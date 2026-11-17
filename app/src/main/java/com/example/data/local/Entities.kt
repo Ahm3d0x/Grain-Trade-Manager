@@ -7,6 +7,11 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.Relation
 
+enum class InvoiceType(val labelAr: String) {
+    PURCHASE("فاتورة شراء"),
+    SALE("فاتورة بيع وتوريد")
+}
+
 enum class InvoiceStatus(val labelAr: String) {
     DRAFT("مسودة"),
     APPROVED("معتمدة")
@@ -23,6 +28,22 @@ enum class PaymentRecordType(val labelAr: String) {
     PAYMENT("دفعة سداد"),
     REFUND("رد مبلغ فائض نقدًا"),
     CREDIT_TRANSFER("تحويل الفائض لرصيد العميل")
+}
+
+enum class ProfitCalculationMode(val labelAr: String, val descriptionAr: String) {
+    WITH_EXPENSES(
+        labelAr = "النظام الشامل (خصم مصاريف النقلة والمشال)",
+        descriptionAr = "يحسب صافي الربح بعد خصم متوسط تكلفة الشراء ومصاريف النقل والمشال والغربلة لكل نقلة بيع"
+    ),
+    DIRECT_MARGIN(
+        labelAr = "النظام المباشر (فرق السعر بدون مصاريف)",
+        descriptionAr = "يحسب الربح المباشر كفرق بين سعر البيع ومتوسط تكلفة الشراء فقط مع إخفاء خانة المصاريف"
+    )
+}
+
+enum class ShrinkageAdjustmentType(val labelAr: String) {
+    MANUAL_SHRINKAGE("تسوية جفاف / غربلة يدوية"),
+    BATCH_ZERO_OUT("تصفير الدفعة عند نفاد المخزن")
 }
 
 @Entity(tableName = "customers")
@@ -80,11 +101,14 @@ data class PricingUnitEntity(
 data class InvoiceEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val invoiceNumber: String,
+    val invoiceType: String = InvoiceType.PURCHASE.name,
     val customerId: Long? = null,
     val customerNameSnapshot: String = "عميل نقدي (بدون تسجيل)",
     val customerPhoneSnapshot: String = "",
     val invoiceDate: Long = System.currentTimeMillis(),
     val status: String = InvoiceStatus.DRAFT.name,
+    val saleExpenses: Double = 0.0,
+    val costPerKgSnapshot: Double = 0.0,
     val notes: String = "",
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
@@ -179,6 +203,29 @@ data class AuditLogEntity(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+@Entity(
+    tableName = "inventory_adjustments",
+    foreignKeys = [
+        ForeignKey(
+            entity = ProductEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["productId"],
+            onDelete = ForeignKey.SET_NULL
+        )
+    ],
+    indices = [Index("productId")]
+)
+data class InventoryAdjustmentEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val productId: Long? = null,
+    val productNameSnapshot: String,
+    val adjustmentType: String = ShrinkageAdjustmentType.MANUAL_SHRINKAGE.name,
+    val weightLossKg: Double,
+    val referencePurchasedKg: Double = 0.0,
+    val reason: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 @Entity(tableName = "app_settings")
 data class AppSettingsEntity(
     @PrimaryKey val id: Int = 1,
@@ -187,7 +234,8 @@ data class AppSettingsEntity(
     val merchantAddress: String = "",
     val currencySymbol: String = "ج.م",
     val startingInvoiceNumber: Int = 1001,
-    val invoiceFooterNotes: String = ""
+    val invoiceFooterNotes: String = "",
+    val profitCalculationMode: String = ProfitCalculationMode.WITH_EXPENSES.name
 )
 
 data class SectionWithWeights(
