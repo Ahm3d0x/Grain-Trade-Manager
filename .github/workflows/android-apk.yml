@@ -5,6 +5,9 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -32,7 +35,9 @@ jobs:
           KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
           STORE_PASSWORD: android123
           KEY_PASSWORD: android123
-        run: gradle assembleRelease
+        run: |
+          gradle assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk GrainTradeManager-release.apk
 
       - name: Upload Signed Release APK
         uses: actions/upload-artifact@v4

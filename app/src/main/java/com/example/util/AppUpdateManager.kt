@@ -226,7 +226,9 @@ object AppUpdateManager {
         }
 
     fun openDownloadUrl(context: Context, downloadUrl: String) {
-        val cleanUrl = downloadUrl.trim().ifEmpty { OFFICIAL_APK_DOWNLOAD_URL }
+        val baseUrl = downloadUrl.trim().ifEmpty { OFFICIAL_APK_DOWNLOAD_URL }
+        val separator = if (baseUrl.contains("?")) "&" else "?"
+        val cleanUrl = "${baseUrl}${separator}t=${System.currentTimeMillis()}"
         try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(cleanUrl)).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

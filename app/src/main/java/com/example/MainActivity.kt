@@ -80,9 +80,16 @@ import com.example.ui.theme.WheatGoldLight
 import com.example.ui.viewmodel.AppScreen
 import com.example.ui.viewmodel.GrainViewModel
 import com.example.util.AppUpdateManager
+import com.example.util.AutoBackupManager
 import com.example.util.UpdateCheckResult
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private val autoBackupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -108,6 +115,20 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                 }
+            }
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) {
+            val appCtx = applicationContext
+            autoBackupScope.launch {
+                AutoBackupManager.performAutoBackupIfChanged(
+                    context = appCtx,
+                    force = false,
+                    triggerReason = "إغلاق التطبيق"
+                )
             }
         }
     }

@@ -1,6 +1,8 @@
 {
   "name": "احسبلي",
-  "description": "تطبيق احسبلي المتكامل لإدارة حسابات وأوزان وفواتير تجارة الحبوب والغلال وإصدار فواتير PDF",
+  "description": "نظام احسبلي (الإصدار 3.0 - UltraSoft) لإدارة تجارة الحبوب والغلال والشونة والمبيعات والرسوم البيانية للأرباح والنسخ الاحتياطي التلقائي",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

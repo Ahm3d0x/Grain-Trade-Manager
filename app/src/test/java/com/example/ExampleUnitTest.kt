@@ -189,4 +189,47 @@ class ExampleUnitTest {
         assertEquals(18000.0, summary.getTotalProfitByMode(ProfitCalculationMode.DIRECT_MARGIN), 0.01)
         assertEquals(16500.0, summary.getTotalProfitByMode(ProfitCalculationMode.WITH_EXPENSES), 0.01)
     }
+
+    @Test
+    fun autoBackupRetentionPolicy_keepsTwoFullDaysAndTwentyEightConsolidatedDays() {
+        val tempDir = kotlin.io.path.createTempDirectory("ehsebly_backup_test").toFile()
+        try {
+            // Simulate 32 days of usage (2026-10-01 to 2026-11-01), with 3 open/close sessions per day
+            val dayKeys = (1..30).map { d -> "2026-10-%02d".format(d) } + listOf("2026-10-31", "2026-11-01")
+            var baseTs = 1760000000000L
+
+            dayKeys.forEach { dayKey ->
+                for (sessionIdx in 1..3) {
+                    baseTs += 1000L
+                    val timePart = "1%d-00-00".format(sessionIdx)
+                    val f = java.io.File(tempDir, "ehsebly_backup_${dayKey}_session_${timePart}_${baseTs}.json")
+                    f.writeText("""{"day":"$dayKey","session":$sessionIdx}""")
+                }
+            }
+
+            com.example.util.AutoBackupManager.applyRetentionPolicy(tempDir)
+            val entries = com.example.util.AutoBackupManager.listBackupEntries(tempDir)
+
+            val detailedEntries = entries.filter { it.isWithinDetailedTwoDays }
+            val consolidatedEntries = entries.filter { !it.isWithinDetailedTwoDays }
+
+            // Last 2 days ("2026-11-01" and "2026-10-31") keep all 3 session files each = 6 files
+            assertEquals(6, detailedEntries.size)
+            assertEquals(setOf("2026-11-01", "2026-10-31"), detailedEntries.map { it.dayKey }.toSet())
+
+            // Previous 28 days ("2026-10-03" through "2026-10-30") keep ONLY the latest 1 file per day = 28 files
+            assertEquals(28, consolidatedEntries.size)
+            consolidatedEntries.forEach { entry ->
+                assertEquals(true, entry.isConsolidatedDaily)
+                // Verify that the kept file is session 3 (the latest session of that day)
+                val content = java.io.File(entry.filePath).readText()
+                assertEquals(true, content.contains("\"session\":3"))
+            }
+
+            // Days 31 & 32 back ("2026-10-01" and "2026-10-02") were deleted (total distinct days = 30)
+            assertEquals(30, entries.map { it.dayKey }.distinct().size)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
 }

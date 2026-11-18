@@ -50,8 +50,13 @@ import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SystemUpdateAlt
+import androidx.core.content.FileProvider
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -118,9 +123,14 @@ import com.example.ui.theme.WheatGold
 import com.example.ui.theme.WheatGoldLight
 import com.example.util.AppUpdateInfo
 import com.example.util.AppUpdateManager
+import com.example.util.AutoBackupEntry
+import com.example.util.AutoBackupManager
+import com.example.util.AutoBackupResult
 import com.example.util.UpdateCheckResult
 import kotlinx.coroutines.launch
+import java.io.File
 import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
@@ -503,6 +513,7 @@ fun DefinitionsAndSettingsScreen(
 
                 1 -> {
                     BackupAndRestoreSettingsTab(
+                        context = context,
                         onExportClick = {
                             onExportBackup { json ->
                                 pendingBackupJson = json
@@ -511,6 +522,9 @@ fun DefinitionsAndSettingsScreen(
                         },
                         onImportClick = {
                             openBackupLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                        },
+                        onRestoreJson = { json ->
+                            onImportBackup(json)
                         }
                     )
                 }
@@ -1271,14 +1285,231 @@ private fun LicenseInfoRow(
  */
 @Composable
 private fun BackupAndRestoreSettingsTab(
+    context: Context,
     onExportClick: () -> Unit,
-    onImportClick: () -> Unit
+    onImportClick: () -> Unit,
+    onRestoreJson: (String) -> Unit
 ) {
+    val coroutineScope = rememberCoroutineScope()
+    var statusSummary by remember { mutableStateOf(AutoBackupManager.getStatusSummary(context)) }
+    var isRunningBackupNow by remember { mutableStateOf(false) }
+    var backupActionMessage by remember { mutableStateOf<String?>(null) }
+    var entryPendingRestore by remember { mutableStateOf<AutoBackupEntry?>(null) }
+    var entryPendingDelete by remember { mutableStateOf<AutoBackupEntry?>(null) }
+
+    val dateTimeFormatter = remember {
+        SimpleDateFormat("yyyy/MM/dd • hh:mm:ss a", Locale.forLanguageTag("ar-EG"))
+    }
+    val timeOnlyFormatter = remember {
+        SimpleDateFormat("hh:mm:ss a", Locale.forLanguageTag("ar-EG"))
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // 1. Smart Automatic Backup on App Close Card (30-Day Policy)
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.5.dp, EmeraldPrimary, RoundedCornerShape(16.dp)),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(EmeraldLight),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.History, contentDescription = null, tint = EmeraldPrimary)
+                            }
+                            Column {
+                                Text(
+                                    text = "النسخ الاحتياطي التلقائي الذكي (30 يومًا)",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = EmeraldPrimary
+                                )
+                                Text(
+                                    text = "يحفظ تلقائيًا عند إغلاق التطبيق في حال حدوث تغيير بالبيانات",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = statusSummary.isEnabled,
+                            onCheckedChange = { enabled ->
+                                AutoBackupManager.setAutoBackupEnabled(context, enabled)
+                                statusSummary = AutoBackupManager.getStatusSummary(context)
+                            },
+                            modifier = Modifier.testTag("auto_backup_switch")
+                        )
+                    }
+
+                    // Explanation of the 2-day + 28-day = 30-day smart policy
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = EmeraldLight.copy(alpha = 0.55f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "آلية الاحتفاظ الذكي بالنسخ (توفير المساحة + أقصى حماية):",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = EmeraldDark
+                            )
+                            Text(
+                                text = "• آخر يومين (2 يوم): الاحتفاظ بجميع ملفات النسخ الاحتياطي لكل عملية فتح وإغلاق حدث فيها تغيير (سجل التغيرات الكامل).",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = EmeraldDark
+                            )
+                            Text(
+                                text = "• الـ 28 يومًا السابقة: عند دخول اليوم الثالث يتم تلقائيًا اعتماد آخر نسخة احتياطية فقط من ذلك اليوم وحذف باقي سجلات اليوم نفسه، ليكون هناك 28 ملفًا لـ 28 يومًا (ملف واحد شامل لآخر تغييرات كل يوم).",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = EmeraldDark
+                            )
+                        }
+                    }
+
+                    // Folder Path & Storage Stats
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.background,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, WheatCardBorder, RoundedCornerShape(10.dp))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Folder,
+                                    contentDescription = null,
+                                    tint = WheatGold,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "مجلد النسخ على الجهاز: ${AutoBackupManager.BACKUP_FOLDER_NAME}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Text(
+                                text = statusSummary.folderPath,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            HorizontalDivider(color = WheatCardBorder.copy(alpha = 0.6f))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "الأيام المحفوظة: ${statusSummary.totalDaysCount} / 30 يوم",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = EmeraldPrimary
+                                )
+                                Text(
+                                    text = "المساحة المستخدمة: ${AutoBackupManager.formatFileSize(statusSummary.totalStorageBytes)}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = WheatGold
+                                )
+                            }
+                            if (statusSummary.lastBackupTimestamp > 0L) {
+                                Text(
+                                    text = "آخر نسخ تلقائي: ${dateTimeFormatter.format(Date(statusSummary.lastBackupTimestamp))}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    backupActionMessage?.let { msg ->
+                        Text(
+                            text = msg,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = EmeraldPrimary
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            isRunningBackupNow = true
+                            backupActionMessage = null
+                            coroutineScope.launch {
+                                val res = AutoBackupManager.performAutoBackupIfChanged(
+                                    context = context,
+                                    force = true,
+                                    triggerReason = "نسخ فوري من الإعدادات"
+                                )
+                                isRunningBackupNow = false
+                                statusSummary = AutoBackupManager.getStatusSummary(context)
+                                backupActionMessage = when (res) {
+                                    is AutoBackupResult.Created ->
+                                        "تم حفظ نسخة احتياطية جديدة بنجاح وتحديث سجل الـ 30 يومًا ✓"
+                                    is AutoBackupResult.NoChanges ->
+                                        "لا توجد تغييرات جديدة في البيانات منذ آخر نسخة محفوظة."
+                                    is AutoBackupResult.Disabled ->
+                                        "النسخ الاحتياطي التلقائي متوقف حاليًا."
+                                    is AutoBackupResult.Error ->
+                                        res.message
+                                }
+                            }
+                        },
+                        enabled = !isRunningBackupNow,
+                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("run_smart_auto_backup_now_button")
+                    ) {
+                        Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isRunningBackupNow) "جارِ حفظ النسخة الاحتياطية..." else "حفظ نسخة الآن في فولدر الـ 30 يومًا",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+
+        // 2. Manual Export / Import Card
         item {
             Card(
                 modifier = Modifier
@@ -1289,7 +1520,7 @@ private fun BackupAndRestoreSettingsTab(
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -1297,7 +1528,7 @@ private fun BackupAndRestoreSettingsTab(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(38.dp)
+                                .size(36.dp)
                                 .clip(CircleShape)
                                 .background(WheatGoldLight),
                             contentAlignment = Alignment.Center
@@ -1306,23 +1537,17 @@ private fun BackupAndRestoreSettingsTab(
                         }
                         Column {
                             Text(
-                                text = "النسخ الاحتياطي واستعادة البيانات",
-                                style = MaterialTheme.typography.titleMedium,
+                                text = "تصدير واستيراد يدوي لملف خارجي",
+                                style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "حفظ واسترجاع قاعدة البيانات بالكامل بدون إنترنت",
+                                text = "لحفظ نسخة خارجية أو نقل البيانات إلى هاتف آخر",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
-
-                    Text(
-                        text = "يمكنك تصدير نسخة احتياطية شاملة تحتوي على جميع العملاء، الفواتير، الأوزان، المدفوعات، أنواع الحبوب، ووحدات التسعير إلى ملف على هاتفك، واستعادتها في أي وقت أو عند نقل التطبيق لهاتف آخر.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1331,25 +1556,352 @@ private fun BackupAndRestoreSettingsTab(
                         Button(
                             onClick = onExportClick,
                             colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
-                            modifier = Modifier.weight(1f).height(48.dp)
+                            modifier = Modifier.weight(1f).height(46.dp)
                         ) {
                             Icon(Icons.Default.Backup, contentDescription = null)
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("تصدير نسخة احتياطية", softWrap = false, maxLines = 1)
+                            Text("تصدير ملف خارجي", softWrap = false, maxLines = 1)
                         }
 
                         OutlinedButton(
                             onClick = onImportClick,
-                            modifier = Modifier.weight(1f).height(48.dp)
+                            modifier = Modifier.weight(1f).height(46.dp)
                         ) {
                             Icon(Icons.Default.Restore, contentDescription = null)
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("استعادة نسخة", softWrap = false, maxLines = 1)
+                            Text("استعادة من ملف", softWrap = false, maxLines = 1)
                         }
                     }
                 }
             }
         }
+
+        // 3. Detailed Last 2 Days Section (All open/close session changes)
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, WheatCardBorder, RoundedCornerShape(16.dp)),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "سجل التغيرات الكامل لآخر يومين (جميع الجلسات)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = EmeraldPrimary
+                            )
+                            Text(
+                                text = "يحتفظ بملف مستقل لكل عملية فتح وإغلاق حدث فيها تعديل خلال آخر يومين",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = EmeraldLight
+                        ) {
+                            Text(
+                                text = "${statusSummary.detailedTwoDaysEntries.size} نسخة",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = EmeraldPrimary,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    if (statusSummary.detailedTwoDaysEntries.isEmpty()) {
+                        Text(
+                            text = "لا توجد نسخ مسجلة بعد؛ سيتم الحفظ تلقائيًا فور إجراء أي تعديل وإغلاق التطبيق.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        val groupedByDay = statusSummary.detailedTwoDaysEntries.groupBy { it.dayKey }
+                        groupedByDay.forEach { (dayKey, dayEntries) ->
+                            Text(
+                                text = "📅 يوم $dayKey (${dayEntries.size} جلسة تعديل محفوظة)",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = EmeraldDark
+                            )
+                            dayEntries.forEach { entry ->
+                                AutoBackupEntryRow(
+                                    entry = entry,
+                                    subtitleTime = timeOnlyFormatter.format(Date(entry.timestamp)),
+                                    badgeText = "جلسة تعديل",
+                                    badgeBg = EmeraldLight,
+                                    badgeColor = EmeraldPrimary,
+                                    onRestoreClick = { entryPendingRestore = entry },
+                                    onShareClick = { shareAutoBackupFile(context, entry) },
+                                    onDeleteClick = { entryPendingDelete = entry }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. Consolidated 28 Days Archive Section (1 Final File Per Day)
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, WheatCardBorder, RoundedCornerShape(16.dp)),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "أرشيف الـ 28 يومًا السابقة (نسخة يومية موحدة)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = WheatGold
+                            )
+                            Text(
+                                text = "ملف واحد لكل يوم يحتوي على آخر تغييرات اليوم بعد دمج وحذف الجلسات الأقدم",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = WheatGoldLight
+                        ) {
+                            Text(
+                                text = "${statusSummary.consolidatedDailyEntries.size} / 28 يوم",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = WheatGold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    if (statusSummary.consolidatedDailyEntries.isEmpty()) {
+                        Text(
+                            text = "عند مرور يومين على أي يوم عمل، يتم تلقائيًا اعتماد آخر نسخة في ذلك اليوم ونقلها إلى هذا الأرشيف اليومي (حتى 28 يومًا).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        statusSummary.consolidatedDailyEntries.forEach { entry ->
+                            AutoBackupEntryRow(
+                                entry = entry,
+                                subtitleTime = "آخر تحديث في اليوم: ${timeOnlyFormatter.format(Date(entry.timestamp))}",
+                                badgeText = "نسخة اليوم النهائية",
+                                badgeBg = WheatGoldLight,
+                                badgeColor = WheatGold,
+                                onRestoreClick = { entryPendingRestore = entry },
+                                onShareClick = { shareAutoBackupFile(context, entry) },
+                                onDeleteClick = { entryPendingDelete = entry }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Restore Confirmation Dialog
+    if (entryPendingRestore != null) {
+        val target = entryPendingRestore!!
+        AlertDialog(
+            onDismissRequest = { entryPendingRestore = null },
+            title = { Text("تأكيد استعادة النسخة الاحتياطية", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "هل تريد استعادة البيانات من نسخة يوم (${target.dayKey})؟\n" +
+                        "التفاصيل: ${target.changeSummary}\n\n" +
+                        "سيتم استبدال البيانات الحالية بالبيانات المحفوظة في هذه النسخة."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val json = AutoBackupManager.readBackupFileJson(target)
+                        entryPendingRestore = null
+                        if (!json.isNullOrBlank()) {
+                            onRestoreJson(json)
+                            backupActionMessage = "تم استعادة النسخة الاحتياطية ليوم ${target.dayKey} بنجاح ✓"
+                        } else {
+                            backupActionMessage = "تعذر قراءة ملف النسخة الاحتياطية."
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
+                ) {
+                    Text("استعادة الآن")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { entryPendingRestore = null }) {
+                    Text("إلغاء")
+                }
+            }
+        )
+    }
+
+    // Delete Confirmation Dialog
+    if (entryPendingDelete != null) {
+        val target = entryPendingDelete!!
+        AlertDialog(
+            onDismissRequest = { entryPendingDelete = null },
+            title = { Text("حذف ملف النسخة الاحتياطية", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("هل أنت متأكد من حذف ملف النسخة الاحتياطية (${target.fileName})؟")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        AutoBackupManager.deleteBackupEntry(context, target)
+                        entryPendingDelete = null
+                        statusSummary = AutoBackupManager.getStatusSummary(context)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = StatusUnpaidRed)
+                ) {
+                    Text("حذف")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { entryPendingDelete = null }) {
+                    Text("إلغاء")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun AutoBackupEntryRow(
+    entry: AutoBackupEntry,
+    subtitleTime: String,
+    badgeText: String,
+    badgeBg: Color,
+    badgeColor: Color,
+    onRestoreClick: () -> Unit,
+    onShareClick: () -> Unit,
+    onDeleteClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.background,
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, WheatCardBorder, RoundedCornerShape(12.dp))
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "${entry.dayKey} • $subtitleTime",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = entry.changeSummary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = badgeBg
+                ) {
+                    Text(
+                        text = badgeText,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = badgeColor,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "الحجم: ${AutoBackupManager.formatFileSize(entry.fileSizeBytes)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = onRestoreClick) {
+                        Icon(Icons.Default.Restore, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("استعادة", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                    IconButton(onClick = onShareClick, modifier = Modifier.size(34.dp)) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "مشاركة ملف النسخة",
+                            tint = EmeraldPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    IconButton(onClick = onDeleteClick, modifier = Modifier.size(34.dp)) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "حذف النسخة",
+                            tint = StatusUnpaidRed,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun shareAutoBackupFile(context: Context, entry: AutoBackupEntry) {
+    try {
+        val file = File(entry.filePath)
+        if (!file.exists()) return
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/json"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, "نسخة احتياطية احسبلي - ${entry.dayKey}")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, "مشاركة أو حفظ ملف النسخة الاحتياطية"))
+    } catch (_: Exception) {
+        Toast.makeText(context, "تعذر مشاركة ملف النسخة الاحتياطية", Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -1472,7 +2024,8 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                         "فواتير البيع والتوريد للمطاحن والتجار: إصدار فواتير بيع بالوزن الكلي المقطوع مباشرة، وخصم الكمية آليًا من الشونة، وحساب صافي الربح في كل نقلة فورًا.",
                         "معالجة عجز الجفاف والغربلة (Shrinkage): دعم (تسوية الجفاف اليدوية) و(تصفير الدفعة آليًا عند نفاد المخزن) مع حساب نسبة الهالك المئوية لكل محصول.",
                         "نظامان مرنان لحساب صافي الربح من الإعدادات: إما (شامل المصاريف من نقل ومشال وعمولة) أو (فرق السعر المباشر فقط).",
-                        "تقارير الرسوم البيانية التفاعلية لأرباح الحبوب: 3 رسوم بيانية تفاعلية (أعمدة الأرباح، مقارنة الإيراد والتكلفة، ونسب المساهمة الدائرية) مع فلترة بالتاريخ المخصص (من تاريخ - إلى تاريخ)."
+                        "تقارير الرسوم البيانية التفاعلية لأرباح الحبوب: 3 رسوم بيانية تفاعلية (أعمدة الأرباح، مقارنة الإيراد والتكلفة، ونسب المساهمة الدائرية) مع فلترة بالتاريخ المخصص (من تاريخ - إلى تاريخ).",
+                        "النسخ الاحتياطي التلقائي الذكي (لآخر 30 يومًا): نسخ تلقائي عند إغلاق التطبيق في حال حدوث تعديل بالبيانات، مع الاحتفاظ بكامل سجل التغيرات لآخر يومين، واعتماد نسخة يومية موحدة لآخر تغييرات اليوم للـ 28 يومًا السابقة."
                     )
 
                     v3ReleaseHighlights.forEach { itemText ->
@@ -1840,10 +2393,10 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                             "القدرة على فتح أي فاتورة من سجل العميل لتعديلها أو طباعتها أو إرسالها عبر واتساب أو حذفها مع تأكيد الحذف.",
                             "تسجيل دفعات السداد الكلي أو الجزئي (نقدي، تحويل بنكي، محفظة إلكترونية، شيك) وتسوية الفروق."
                         ),
-                        "8. التعريفات والنسخ الاحتياطي الشامل والتحديثات" to listOf(
-                            "مرونة كاملة في تعريف أنواع الحبوب ووحدات التسعير وأوزانها القياسية (أردب، طن، قنطار، كيلو) وبيانات المكتب.",
-                            "العمل الكامل بدون إنترنت (Offline-First) مع تصدير واستعادة نسخة احتياطية شاملة تضم الفواتير والمخزن والمبيعات وتسويات الجفاف.",
-                            "نظام إشعارات تلقائي ينبه المستخدم فور نزول تحديث جديد للبرنامج مع رابط مباشر لتنزيل الإصدار الأحدث."
+                        "8. النسخ الاحتياطي التلقائي الذكي (30 يومًا) والتحديثات" to listOf(
+                            "نسخ احتياطي تلقائي عند إغلاق التطبيق في حال حدوث أي تغيير في البيانات داخل مجلد مخصص على الجهاز (Ehsebly_AutoBackups).",
+                            "الاحتفاظ بجميع نسخ وجلسات التعديل الكاملة لآخر يومين، وعند اليوم الثالث يتم اعتماد آخر نسخة فقط من اليوم وحذف الجلسات الأقدم ليكون هناك 28 ملفًا لـ 28 يومًا توفيرًا للمساحة.",
+                            "العمل الكامل بدون إنترنت (Offline-First) مع إمكانية استعادة أو مشاركة أي نسخة من سجل الـ 30 يومًا بضغطة واحدة، ونظام إشعارات تلقائي للتحديثات."
                         )
                     )
 

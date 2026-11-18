@@ -2,4 +2,6 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="shared_invoices" path="invoices/" />
     <files-path name="saved_invoices" path="invoices/" />
+    <external-files-path name="auto_backups_ext" path="Ehsebly_AutoBackups/" />
+    <files-path name="auto_backups_int" path="Ehsebly_AutoBackups/" />
 </paths>
