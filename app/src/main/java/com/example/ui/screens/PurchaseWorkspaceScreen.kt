@@ -833,12 +833,10 @@ private fun CustomerAndGrainStepPage(
                             Text("حفظ العميل")
                         }
                     } else {
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            label = { Text("بحث باسم العميل أو رقم الهاتف") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                        EhseblySearchField(
+                            query = searchQuery,
+                            onQueryChange = { searchQuery = it },
+                            placeholder = "ابحث باسم العميل أو رقم الهاتف..."
                         )
 
                         LazyColumn(
@@ -913,7 +911,7 @@ private fun CustomerAndGrainStepPage(
             ) {
                 Column(
                     modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
                         text = "2. تحديد نوع الحبوب وتسعير القسم الأول",
@@ -921,25 +919,33 @@ private fun CustomerAndGrainStepPage(
                         fontWeight = FontWeight.Bold
                     )
 
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(activeProducts) { prod ->
-                            FilterChip(
-                                selected = selectedProduct.id == prod.id,
-                                onClick = {
-                                    selectedProduct = prod
-                                    val linkedUnit = activeUnits.find { it.linkedProductId == prod.id } ?: selectedUnit
-                                    selectedUnit = linkedUnit
-                                    val p = unitPriceText.toDoubleOrNull() ?: 4000.0
-                                    onUpdateFirstSection(prod, linkedUnit, p)
-                                },
-                                label = { Text(prod.name, softWrap = false, maxLines = 1) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = EmeraldPrimary,
-                                    selectedLabelColor = Color.White
-                                )
-                            )
+                    GrainProductDropdownSelector(
+                        products = activeProducts,
+                        selectedProduct = selectedProduct,
+                        label = "نوع الحبوب المختار",
+                        subtitleFormatter = { prod ->
+                            val linked = activeUnits.find { it.linkedProductId == prod.id }
+                            linked?.let { "الوحدة القياسية: ${it.name} (${CalculationEngine.formatWeight(it.weightKg)} كجم)" }
+                        },
+                        onProductSelected = { prod ->
+                            selectedProduct = prod
+                            val linkedUnit = activeUnits.find { it.linkedProductId == prod.id } ?: selectedUnit
+                            selectedUnit = linkedUnit
+                            val p = unitPriceText.toDoubleOrNull() ?: 4000.0
+                            onUpdateFirstSection(prod, linkedUnit, p)
                         }
-                    }
+                    )
+
+                    PricingUnitDropdownSelector(
+                        units = activeUnits,
+                        selectedUnit = selectedUnit,
+                        label = "وحدة التسعير لـ (${selectedProduct.name})",
+                        onUnitSelected = { unit ->
+                            selectedUnit = unit
+                            val p = unitPriceText.toDoubleOrNull() ?: 4000.0
+                            onUpdateFirstSection(selectedProduct, unit, p)
+                        }
+                    )
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -958,6 +964,7 @@ private fun CustomerAndGrainStepPage(
                             label = { Text("سعر ${selectedUnit.name} ($currencySymbol)") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f)
                         )
 
@@ -969,30 +976,35 @@ private fun CustomerAndGrainStepPage(
                             },
                             label = { Text("ملاحظات (اختياري)") },
                             singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f)
                         )
                     }
 
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(activeUnits) { unit ->
-                            FilterChip(
-                                selected = selectedUnit.id == unit.id,
-                                onClick = {
-                                    selectedUnit = unit
-                                    val p = unitPriceText.toDoubleOrNull() ?: 4000.0
-                                    onUpdateFirstSection(selectedProduct, unit, p)
-                                },
-                                label = {
-                                    Text(
-                                        text = "${unit.name} (${CalculationEngine.formatWeight(unit.weightKg)} كجم)",
-                                        softWrap = false,
-                                        maxLines = 1
-                                    )
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = WheatGold,
-                                    selectedLabelColor = Color.White
-                                )
+                    val previewPrice = unitPriceText.toDoubleOrNull() ?: 0.0
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = EmeraldLight,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "المحصول: ${selectedProduct.name}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = EmeraldPrimary
+                            )
+                            Text(
+                                text = "${CalculationEngine.formatCurrency(previewPrice, currencySymbol)} / ${selectedUnit.name} (${CalculationEngine.formatWeight(selectedUnit.weightKg)} كجم)",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = EmeraldPrimary
                             )
                         }
                     }

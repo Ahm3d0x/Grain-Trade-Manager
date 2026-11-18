@@ -4,34 +4,48 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Grass
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Scale
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,9 +58,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.local.AuditLogEntity
 import com.example.data.local.CustomerEntity
@@ -55,6 +71,7 @@ import com.example.data.local.PricingUnitEntity
 import com.example.data.local.ProductEntity
 import com.example.data.local.WeightEntity
 import com.example.domain.CalculationEngine
+import com.example.ui.theme.EmeraldDark
 import com.example.ui.theme.EmeraldLight
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.StatusSettlementBg
@@ -62,9 +79,358 @@ import com.example.ui.theme.StatusSettlementPurple
 import com.example.ui.theme.StatusUnpaidRed
 import com.example.ui.theme.WheatCardBorder
 import com.example.ui.theme.WheatGold
+import com.example.ui.theme.WheatGoldLight
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+/**
+ * سلكتور احترافي لاختيار نوع الحبوب من قائمة منسدلة لتقليل التشتت والبيانات المعروضة
+ */
+@Composable
+fun GrainProductDropdownSelector(
+    products: List<ProductEntity>,
+    selectedProduct: ProductEntity,
+    onProductSelected: (ProductEntity) -> Unit,
+    modifier: Modifier = Modifier,
+    label: String = "نوع الحبوب",
+    accentColor: Color = EmeraldPrimary,
+    subtitleFormatter: ((ProductEntity) -> String?)? = null
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box(modifier = modifier.fillMaxWidth()) {
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.background,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .border(1.5.dp, accentColor.copy(alpha = 0.65f), RoundedCornerShape(14.dp))
+                .clickable { expanded = true }
+                .testTag("grain_product_selector")
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = accentColor.copy(alpha = 0.14f),
+                        modifier = Modifier.size(38.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Grass,
+                                contentDescription = null,
+                                tint = accentColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    Column {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = selectedProduct.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = accentColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        subtitleFormatter?.invoke(selectedProduct)?.let { sub ->
+                            Text(
+                                text = sub,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = accentColor.copy(alpha = 0.12f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "تغيير",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = accentColor
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = "فتح القائمة",
+                            tint = accentColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier
+                .fillMaxWidth(0.88f)
+                .background(MaterialTheme.colorScheme.surface)
+        ) {
+            products.forEach { prod ->
+                val isSelected = prod.id == selectedProduct.id
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(
+                                text = prod.name,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) accentColor else MaterialTheme.colorScheme.onSurface
+                            )
+                            subtitleFormatter?.invoke(prod)?.let { sub ->
+                                Text(
+                                    text = sub,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Grass,
+                            contentDescription = null,
+                            tint = if (isSelected) accentColor else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    trailingIcon = {
+                        if (isSelected) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = accentColor
+                            )
+                        }
+                    },
+                    onClick = {
+                        onProductSelected(prod)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * سلكتور احترافي لاختيار وحدة التسعير (أردب / طن / كيلو...) من قائمة منسدلة
+ */
+@Composable
+fun PricingUnitDropdownSelector(
+    units: List<PricingUnitEntity>,
+    selectedUnit: PricingUnitEntity,
+    onUnitSelected: (PricingUnitEntity) -> Unit,
+    modifier: Modifier = Modifier,
+    label: String = "وحدة التسعير"
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box(modifier = modifier.fillMaxWidth()) {
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.background,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .border(1.5.dp, WheatGold.copy(alpha = 0.7f), RoundedCornerShape(14.dp))
+                .clickable { expanded = true }
+                .testTag("pricing_unit_selector")
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = WheatGoldLight,
+                        modifier = Modifier.size(38.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Scale,
+                                contentDescription = null,
+                                tint = WheatGold,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    Column {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "${selectedUnit.name} (${CalculationEngine.formatWeight(selectedUnit.weightKg)} كجم)",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = EmeraldDark,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = WheatGoldLight
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "تغيير الوحدة",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = WheatGold
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = "فتح قائمة الوحدات",
+                            tint = WheatGold,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier
+                .fillMaxWidth(0.88f)
+                .background(MaterialTheme.colorScheme.surface)
+        ) {
+            units.forEach { unit ->
+                val isSelected = unit.id == selectedUnit.id
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = "${unit.name} (${CalculationEngine.formatWeight(unit.weightKg)} كجم)",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isSelected) WheatGold else MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Scale,
+                            contentDescription = null,
+                            tint = if (isSelected) WheatGold else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    trailingIcon = {
+                        if (isSelected) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = WheatGold
+                            )
+                        }
+                    },
+                    onClick = {
+                        onUnitSelected(unit)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * حقل بحث احترافي موحد بسطر واحد مع زر مسح فوري (×) وتصميم نظيف
+ */
+@Composable
+fun EhseblySearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    testTag: String? = null
+) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        placeholder = {
+            Text(
+                text = placeholder,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        leadingIcon = {
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = "بحث",
+                tint = EmeraldPrimary
+            )
+        },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(
+                        imageVector = Icons.Default.Clear,
+                        contentDescription = "مسح البحث",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        singleLine = true,
+        shape = RoundedCornerShape(14.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = EmeraldPrimary,
+            unfocusedBorderColor = WheatCardBorder,
+            focusedContainerColor = MaterialTheme.colorScheme.background,
+            unfocusedContainerColor = MaterialTheme.colorScheme.background
+        ),
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (testTag != null) Modifier.testTag(testTag) else Modifier)
+    )
+}
 
 @Composable
 fun AddOrEditSectionDialog(
@@ -112,53 +478,27 @@ fun AddOrEditSectionDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "نوع الحبوب:",
-                    style = MaterialTheme.typography.labelLarge
-                )
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(activeProducts) { prod ->
-                        FilterChip(
-                            selected = selectedProduct.id == prod.id,
-                            onClick = {
-                                selectedProduct = prod
-                                activeUnits.find { it.linkedProductId == prod.id }?.let { linked ->
-                                    selectedUnit = linked
-                                }
-                            },
-                            label = { Text(prod.name, softWrap = false, maxLines = 1) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = EmeraldPrimary,
-                                selectedLabelColor = Color.White
-                            )
-                        )
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                GrainProductDropdownSelector(
+                    products = activeProducts,
+                    selectedProduct = selectedProduct,
+                    label = "نوع الحبوب",
+                    onProductSelected = { prod ->
+                        selectedProduct = prod
+                        activeUnits.find { it.linkedProductId == prod.id }?.let { linked ->
+                            selectedUnit = linked
+                        }
                     }
-                }
+                )
 
-                Text(
-                    text = "وحدة التسعير:",
-                    style = MaterialTheme.typography.labelLarge
-                )
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(activeUnits) { unit ->
-                        FilterChip(
-                            selected = selectedUnit.id == unit.id,
-                            onClick = { selectedUnit = unit },
-                            label = {
-                                Text(
-                                    text = "${unit.name} (${CalculationEngine.formatWeight(unit.weightKg)} كجم)",
-                                    softWrap = false,
-                                    maxLines = 1
-                                )
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = WheatGold,
-                                selectedLabelColor = Color.White
-                            )
-                        )
+                PricingUnitDropdownSelector(
+                    units = activeUnits,
+                    selectedUnit = selectedUnit,
+                    label = "وحدة التسعير (${selectedProduct.name})",
+                    onUnitSelected = { unit ->
+                        selectedUnit = unit
                     }
-                }
+                )
 
                 OutlinedTextField(
                     value = priceText,
@@ -166,6 +506,7 @@ fun AddOrEditSectionDialog(
                     label = { Text("سعر ${selectedUnit.name} ($currencySymbol)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth().testTag("section_unit_price_input")
                 )
 

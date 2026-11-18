@@ -143,13 +143,11 @@ fun CustomersScreen(
                         }
                     }
 
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        label = { Text("بحث بالاسم أو رقم الهاتف أو العنوان") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag("customer_search_input")
+                    EhseblySearchField(
+                        query = searchQuery,
+                        onQueryChange = { searchQuery = it },
+                        placeholder = "ابحث بالاسم أو رقم الهاتف أو العنوان...",
+                        testTag = "customer_search_input"
                     )
                 }
             }

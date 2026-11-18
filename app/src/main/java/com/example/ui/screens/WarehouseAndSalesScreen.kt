@@ -27,6 +27,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Air
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Delete
@@ -47,6 +49,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -161,10 +165,26 @@ fun WarehouseAndSalesScreen(
 
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf(
-        "أرصدة الشونة الحية" to Icons.Default.Inventory2,
-        "فواتير البيع والأرباح" to Icons.Default.LocalShipping,
-        "سجل الجفاف والعجز" to Icons.Default.Air
+        "أرصدة الشونة" to Icons.Default.Inventory2,
+        "البيع والأرباح" to Icons.Default.LocalShipping,
+        "الجفاف والعجز" to Icons.Default.Air
     )
+
+    // سلكتور المحصول النشط في صفحة الشونة (تتحدث الصفحة وجميع بياناتها عن نفس نوع الحبوب المختار)
+    val availableStocks = warehouseSummary.productStocks
+    var selectedProductName by remember(availableStocks) {
+        mutableStateOf(
+            availableStocks.firstOrNull { it.availableStockKg > 0 }?.productName
+                ?: availableStocks.firstOrNull()?.productName
+                ?: products.firstOrNull()?.name
+                ?: "قمح"
+        )
+    }
+
+    val selectedStock: ProductWarehouseStock? = remember(availableStocks, selectedProductName) {
+        availableStocks.find { it.productName == selectedProductName }
+            ?: availableStocks.firstOrNull()
+    }
 
     var showBulkSaleModal by remember { mutableStateOf(false) }
     var preselectedSaleProduct by remember { mutableStateOf<ProductWarehouseStock?>(null) }
@@ -174,11 +194,32 @@ fun WarehouseAndSalesScreen(
     var paymentTargetSaleInvoice by remember { mutableStateOf<InvoiceWithCalc?>(null) }
     var deleteTargetSaleInvoice by remember { mutableStateOf<InvoiceWithCalc?>(null) }
 
-    val saleInvoices = remember(allInvoices) {
-        allInvoices.filter { it.calc.isSaleInvoice }
+    // تصفية فواتير البيع وسجلات الجفاف لتتحدث عن نوع الحبوب المختار فقط
+    val filteredSaleInvoices = remember(allInvoices, selectedStock) {
+        val targetName = selectedStock?.productName
+        allInvoices.filter { item ->
+            item.calc.isSaleInvoice && (
+                targetName == null ||
+                    item.calc.productSummaries.any { it.productName == targetName } ||
+                    item.details.sections.any { it.section.productNameSnapshot == targetName }
+                )
+        }
     }
 
-    val totalRealizedProfit = warehouseSummary.getTotalProfitByMode(profitMode)
+    val filteredAdjustments = remember(adjustments, selectedStock) {
+        val targetName = selectedStock?.productName
+        if (targetName == null) adjustments
+        else adjustments.filter { it.productNameSnapshot == targetName }
+    }
+
+    // بيانات المحصول المختار لعرضها في الكروت العلوية بدون تشتت
+    val displayAvailableKg = selectedStock?.availableStockKg ?: warehouseSummary.totalAvailableWeightKg
+    val displayValuation = selectedStock?.currentStockValuation ?: warehouseSummary.totalStockValuation
+    val displayProfit = selectedStock?.getProfitByMode(profitMode) ?: warehouseSummary.getTotalProfitByMode(profitMode)
+    val displaySalesRevenue = selectedStock?.soldTotalRevenue ?: warehouseSummary.totalSalesRevenue
+    val displayShrinkageKg = selectedStock?.totalShrinkageKg ?: warehouseSummary.totalShrinkageWeightKg
+    val displayShrinkagePct = selectedStock?.shrinkagePercentage ?: warehouseSummary.overallShrinkagePercent
+    val activeGrainLabel = selectedStock?.productName ?: selectedProductName
 
     Column(
         modifier = Modifier
@@ -229,7 +270,19 @@ fun WarehouseAndSalesScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // 1. Hero Warehouse & Profit Banner
+            // 0. Grain Type Selector Bar (سلكتور تحديد نوع الحبوب لتركيز صفحة الشونة بالكامل عليه)
+            item {
+                WarehouseGrainSelectorCard(
+                    stocks = availableStocks,
+                    selectedStock = selectedStock,
+                    currency = currency,
+                    onSelectStock = { stock ->
+                        selectedProductName = stock.productName
+                    }
+                )
+            }
+
+            // 1. Hero Warehouse & Profit Banner (Focused on Selected Grain)
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -254,7 +307,7 @@ fun WarehouseAndSalesScreen(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "الشونة الحية ودورة المبيعات والأرباح",
+                                        text = "شونة ومبيعات وأرباح ($activeGrainLabel)",
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White
@@ -304,15 +357,16 @@ fun WarehouseAndSalesScreen(
 
                             Button(
                                 onClick = {
-                                    preselectedSaleProduct = warehouseSummary.productStocks.firstOrNull { it.availableStockKg > 0 }
+                                    preselectedSaleProduct = selectedStock
                                         ?: warehouseSummary.productStocks.firstOrNull()
                                     showBulkSaleModal = true
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(52.dp)
+                                    .heightIn(min = 52.dp)
                                     .testTag("new_bulk_sale_button"),
                                 shape = RoundedCornerShape(14.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = WheatGold,
                                     contentColor = Color.White
@@ -321,9 +375,11 @@ fun WarehouseAndSalesScreen(
                                 Icon(Icons.Default.AddCircle, contentDescription = null, modifier = Modifier.size(20.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "فاتورة بيع وتوريد جديدة (وزن كلي مقطوع)",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
+                                    text = "فاتورة بيع وتوريد $activeGrainLabel (وزن مقطوع)",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -331,7 +387,7 @@ fun WarehouseAndSalesScreen(
                 }
             }
 
-            // 2. 4 Key Warehouse & Profit Metrics Grid
+            // 2. 4 Key Warehouse & Profit Metrics Grid (Focused on Selected Grain)
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(
@@ -340,16 +396,20 @@ fun WarehouseAndSalesScreen(
                     ) {
                         WarehouseMetricCard(
                             modifier = Modifier.weight(1f),
-                            title = "الرصيد الحالي بالشونة",
-                            value = "${CalculationEngine.formatWeight(warehouseSummary.totalAvailableWeightKg)} كجم",
-                            subtitle = "≈ ${CalculationEngine.formatNumber(warehouseSummary.totalAvailableWeightKg / 1000.0, 3)} طن متاح",
+                            title = "رصيد $activeGrainLabel بالشونة",
+                            value = "${CalculationEngine.formatWeight(displayAvailableKg)} كجم",
+                            subtitle = if (selectedStock != null) {
+                                "≈ ${CalculationEngine.formatNumber(selectedStock.availableStandardUnits, 2)} ${selectedStock.standardUnitName}"
+                            } else {
+                                "≈ ${CalculationEngine.formatNumber(displayAvailableKg / 1000.0, 3)} طن متاح"
+                            },
                             icon = Icons.Default.Inventory2,
                             accentColor = EmeraldPrimary
                         )
                         WarehouseMetricCard(
                             modifier = Modifier.weight(1f),
-                            title = "قيمة بضاعة الشونة",
-                            value = CalculationEngine.formatCurrency(warehouseSummary.totalStockValuation, currency),
+                            title = "قيمة مخزون $activeGrainLabel",
+                            value = CalculationEngine.formatCurrency(displayValuation, currency),
                             subtitle = "بمتوسط تكلفة الشراء",
                             icon = Icons.Default.Scale,
                             accentColor = WheatGold
@@ -361,17 +421,17 @@ fun WarehouseAndSalesScreen(
                     ) {
                         WarehouseMetricCard(
                             modifier = Modifier.weight(1f),
-                            title = "صافي أرباح المبيعات",
-                            value = CalculationEngine.formatCurrency(totalRealizedProfit, currency),
-                            subtitle = "مبيعات: ${CalculationEngine.formatCurrency(warehouseSummary.totalSalesRevenue, currency)}",
+                            title = "صافي أرباح $activeGrainLabel",
+                            value = CalculationEngine.formatCurrency(displayProfit, currency),
+                            subtitle = "مبيعات: ${CalculationEngine.formatCurrency(displaySalesRevenue, currency)}",
                             icon = Icons.Default.TrendingUp,
-                            accentColor = if (totalRealizedProfit >= 0) StatusPaidGreen else StatusUnpaidRed
+                            accentColor = if (displayProfit >= 0) StatusPaidGreen else StatusUnpaidRed
                         )
                         WarehouseMetricCard(
                             modifier = Modifier.weight(1f),
-                            title = "إجمالي الجفاف والعجز",
-                            value = "${CalculationEngine.formatWeight(warehouseSummary.totalShrinkageWeightKg)} كجم",
-                            subtitle = "نسبة الفاقد: ${CalculationEngine.formatNumber(warehouseSummary.overallShrinkagePercent, 2)}%",
+                            title = "جفاف وعجز $activeGrainLabel",
+                            value = "${CalculationEngine.formatWeight(displayShrinkageKg)} كجم",
+                            subtitle = "نسبة الفاقد: ${CalculationEngine.formatNumber(displayShrinkagePct, 2)}%",
                             icon = Icons.Default.Air,
                             accentColor = StatusPartialAmber
                         )
@@ -379,36 +439,36 @@ fun WarehouseAndSalesScreen(
                 }
             }
 
-            // 3. Content per active tab
+            // 3. Content per active tab (Filtered by Selected Grain)
             when (selectedTab) {
                 0 -> {
                     item {
                         Text(
-                            text = "أرصدة المحاصيل وتكلفة الشراء في الشونة (${warehouseSummary.productStocks.size})",
+                            text = "تفاصيل رصيد وتكلفة الشراء لمحصول ($activeGrainLabel)",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                     }
 
-                    if (warehouseSummary.productStocks.isEmpty()) {
+                    if (selectedStock == null) {
                         item {
                             EmptyWarehouseBox("لا توجد محاصيل مسجلة بعد. ابدأ بإضافة مشتريات لتظهر أرصدة الشونة هنا.")
                         }
                     } else {
-                        items(warehouseSummary.productStocks, key = { it.productName }) { stock ->
+                        item(key = selectedStock.productName) {
                             ProductWarehouseCard(
-                                stock = stock,
+                                stock = selectedStock,
                                 currency = currency,
                                 profitMode = profitMode,
                                 onSellClick = {
-                                    preselectedSaleProduct = stock
+                                    preselectedSaleProduct = selectedStock
                                     showBulkSaleModal = true
                                 },
                                 onManualShrinkageClick = {
-                                    shrinkageTargetStock = stock
+                                    shrinkageTargetStock = selectedStock
                                 },
                                 onZeroOutBatchClick = {
-                                    zeroOutTargetStock = stock
+                                    zeroOutTargetStock = selectedStock
                                 }
                             )
                         }
@@ -423,28 +483,28 @@ fun WarehouseAndSalesScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "سجل فواتير البيع والتوريد (${saleInvoices.size})",
+                                text = "فواتير بيع وتوريد $activeGrainLabel (${filteredSaleInvoices.size})",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                             Button(
                                 onClick = {
-                                    preselectedSaleProduct = warehouseSummary.productStocks.firstOrNull { it.availableStockKg > 0 }
+                                    preselectedSaleProduct = selectedStock
                                     showBulkSaleModal = true
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
                             ) {
-                                Text("بيع جديد")
+                                Text("بيع $activeGrainLabel")
                             }
                         }
                     }
 
-                    if (saleInvoices.isEmpty()) {
+                    if (filteredSaleInvoices.isEmpty()) {
                         item {
-                            EmptyWarehouseBox("لا توجد فواتير بيع وتوريد مسجلة حتى الآن. اضغط على «فاتورة بيع وتوريد جديدة» لتسجيل أول نقلة بيع.")
+                            EmptyWarehouseBox("لا توجد فواتير بيع وتوريد مسجلة لمحصول «$activeGrainLabel» حتى الآن.")
                         }
                     } else {
-                        items(saleInvoices, key = { it.details.invoice.id }) { saleItem ->
+                        items(filteredSaleInvoices, key = { it.details.invoice.id }) { saleItem ->
                             SaleInvoiceCard(
                                 item = saleItem,
                                 currency = currency,
@@ -480,19 +540,34 @@ fun WarehouseAndSalesScreen(
 
                 2 -> {
                     item {
-                        Text(
-                            text = "سجل تسويات الجفاف والغربلة وتصفير الدفعات (${adjustments.size})",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "سجل الجفاف والعجز لـ $activeGrainLabel (${filteredAdjustments.size})",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (selectedStock != null) {
+                                OutlinedButton(
+                                    onClick = { shrinkageTargetStock = selectedStock }
+                                ) {
+                                    Icon(Icons.Default.Air, contentDescription = null, tint = StatusPartialAmber, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("تسجيل جفاف")
+                                }
+                            }
+                        }
                     }
 
-                    if (adjustments.isEmpty()) {
+                    if (filteredAdjustments.isEmpty()) {
                         item {
-                            EmptyWarehouseBox("لا توجد تسويات جفاف أو عجز مسجلة حتى الآن. يمكنك تسجيل عجز جفاف أو تصفير دفعة من بطاقة المحصول في تبويب الشونة.")
+                            EmptyWarehouseBox("لا توجد تسويات جفاف أو عجز مسجلة لمحصول «$activeGrainLabel» حتى الآن.")
                         }
                     } else {
-                        items(adjustments, key = { it.id }) { adj ->
+                        items(filteredAdjustments, key = { it.id }) { adj ->
                             ShrinkageAdjustmentRowCard(
                                 adjustment = adj,
                                 onDelete = { onDeleteAdjustment(adj) }
@@ -615,6 +690,185 @@ fun WarehouseAndSalesScreen(
                 }
             }
         )
+    }
+}
+
+/**
+ * سلكتور اختيار نوع الحبوب في صفحة الشونة بحيث تعرض الصفحة بالكامل بيانات محصول واحد بدون تشتت
+ */
+@Composable
+private fun WarehouseGrainSelectorCard(
+    stocks: List<ProductWarehouseStock>,
+    selectedStock: ProductWarehouseStock?,
+    currency: String,
+    onSelectStock: (ProductWarehouseStock) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val currentName = selectedStock?.productName ?: "اختر نوع الحبوب"
+    val currentAvailKg = selectedStock?.availableStockKg ?: 0.0
+    val hasStock = currentAvailKg > 0.0
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.5.dp, EmeraldPrimary.copy(alpha = 0.55f), RoundedCornerShape(16.dp)),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { if (stocks.isNotEmpty()) expanded = true }
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                    .testTag("warehouse_grain_selector"),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = EmeraldLight,
+                        modifier = Modifier.size(42.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Grass,
+                                contentDescription = null,
+                                tint = EmeraldPrimary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                    Column {
+                        Text(
+                            text = "نوع الحبوب المعروض في الشونة",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = currentName,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = EmeraldPrimary
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (hasStock) EmeraldLight else StatusUnpaidBg
+                            ) {
+                                Text(
+                                    text = "${CalculationEngine.formatWeight(currentAvailKg)} كجم متاح",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (hasStock) EmeraldPrimary else StatusUnpaidRed,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = EmeraldLight
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "تغيير المحصول",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = EmeraldPrimary
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = "اختيار نوع الحبوب",
+                            tint = EmeraldPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .background(MaterialTheme.colorScheme.surface)
+            ) {
+                stocks.forEach { stock ->
+                    val isSelected = stock.productName == selectedStock?.productName
+                    val itemHasStock = stock.availableStockKg > 0.0
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(
+                                        text = stock.productName,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) EmeraldPrimary else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "متوسط التكلفة: ${CalculationEngine.formatCurrency(stock.avgPurchaseCostPerStandardUnit, currency)} / ${stock.standardUnitName}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (itemHasStock) EmeraldLight else StatusUnpaidBg
+                                ) {
+                                    Text(
+                                        text = "${CalculationEngine.formatWeight(stock.availableStockKg)} كجم",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (itemHasStock) EmeraldPrimary else StatusUnpaidRed,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Grass,
+                                contentDescription = null,
+                                tint = if (isSelected) EmeraldPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        trailingIcon = {
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = EmeraldPrimary
+                                )
+                            }
+                        },
+                        onClick = {
+                            onSelectStock(stock)
+                            expanded = false
+                        }
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -766,7 +1020,7 @@ private fun ProductWarehouseCard(
                 }
             }
 
-            // Weighted Average Purchase Cost Strip
+            // Weighted Average Purchase Cost Strip (Spacious 3-Column Grid without Overlap)
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = WheatGoldLight.copy(alpha = 0.65f),
@@ -776,83 +1030,139 @@ private fun ProductWarehouseCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1.25f)) {
                         Text(
-                            text = "متوسط تكلفة الشراء (${stock.standardUnitName})",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = EmeraldDark
+                            text = "متوسط الشراء (${stock.standardUnitName})",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = EmeraldDark,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = CalculationEngine.formatCurrency(stock.avgPurchaseCostPerStandardUnit, currency),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = EmeraldDark
+                            color = EmeraldDark,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(
+                        modifier = Modifier.weight(1.1f),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
                         Text(
                             text = "متوسط تكلفة الطن",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = EmeraldDark
+                            style = MaterialTheme.typography.labelSmall,
+                            color = EmeraldDark,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = CalculationEngine.formatCurrency(stock.avgPurchaseCostPerTon, currency),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = WheatGold
+                            color = WheatGold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Column(horizontalAlignment = Alignment.End) {
+                    Column(
+                        modifier = Modifier.weight(0.9f),
+                        horizontalAlignment = Alignment.End
+                    ) {
                         Text(
                             text = "تكلفة الكيلو",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = EmeraldDark
+                            style = MaterialTheme.typography.labelSmall,
+                            color = EmeraldDark,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = "${CalculationEngine.formatNumber(stock.avgPurchaseCostPerKg, 2)} $currency",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = EmeraldDark
+                            color = EmeraldDark,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
             }
 
-            // Movement Summary Row: Inward (Purchased) | Outward (Sold) | Shrinkage/Dryness | Net Profit
-            Row(
+            // Movement Summary 2x2 Grid (إجمالي المشترى | إجمالي المباع | الجفاف والعجز | صافي الربح)
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.background)
-                    .padding(10.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Column {
-                    Text("إجمالي المشترى", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("${CalculationEngine.formatWeight(stock.purchasedWeightKg)} كجم", fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "إجمالي المشترى",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "${CalculationEngine.formatWeight(stock.purchasedWeightKg)} كجم",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "إجمالي المباع",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "${CalculationEngine.formatWeight(stock.soldWeightKg)} كجم",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = EmeraldPrimary
+                        )
+                    }
                 }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("إجمالي المباع", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("${CalculationEngine.formatWeight(stock.soldWeightKg)} كجم", fontWeight = FontWeight.Bold, color = EmeraldPrimary)
-                }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("الجفاف والعجز", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(
-                        text = "${CalculationEngine.formatWeight(stock.totalShrinkageKg)} كجم (${CalculationEngine.formatNumber(stock.shrinkagePercentage, 1)}%)",
-                        fontWeight = FontWeight.Bold,
-                        color = StatusPartialAmber
-                    )
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text("صافي الربح", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(
-                        text = CalculationEngine.formatCurrency(realizedProfit, currency),
-                        fontWeight = FontWeight.Bold,
-                        color = if (realizedProfit >= 0) StatusPaidGreen else StatusUnpaidRed
-                    )
+                HorizontalDivider(color = WheatCardBorder.copy(alpha = 0.5f))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "الجفاف والعجز",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "${CalculationEngine.formatWeight(stock.totalShrinkageKg)} كجم (${CalculationEngine.formatNumber(stock.shrinkagePercentage, 1)}%)",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = StatusPartialAmber
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "صافي الربح المحقق",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = CalculationEngine.formatCurrency(realizedProfit, currency),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (realizedProfit >= 0) StatusPaidGreen else StatusUnpaidRed
+                        )
+                    }
                 }
             }
 
@@ -1369,26 +1679,22 @@ private fun BulkSaleInvoiceModal(
 
                 HorizontalDivider(color = WheatCardBorder)
 
-                // 1. Select Grain Product
-                Text("1. اختر المحصول المباع من الشونة:", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(activeProducts) { prod ->
-                        val isSelected = selectedProduct.id == prod.id
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = {
-                                selectedProduct = prod
-                                val linked = activeUnits.firstOrNull { it.linkedProductId == prod.id }
-                                if (linked != null) selectedUnit = linked
-                            },
-                            label = { Text(prod.name, fontWeight = FontWeight.Bold) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = EmeraldPrimary,
-                                selectedLabelColor = Color.White
-                            )
-                        )
+                // 1. Select Grain Product via Dropdown Selector
+                GrainProductDropdownSelector(
+                    products = activeProducts,
+                    selectedProduct = selectedProduct,
+                    label = "1. المحصول المباع من الشونة",
+                    subtitleFormatter = { prod ->
+                        val st = warehouseSummary.productStocks.find { it.productId == prod.id || it.productName == prod.name }
+                        val kg = st?.availableStockKg ?: 0.0
+                        "الرصيد المتاح: ${CalculationEngine.formatWeight(kg)} كجم"
+                    },
+                    onProductSelected = { prod ->
+                        selectedProduct = prod
+                        val linked = activeUnits.firstOrNull { it.linkedProductId == prod.id }
+                        if (linked != null) selectedUnit = linked
                     }
-                }
+                )
 
                 // Live Stock & Purchase Cost Info Banner
                 Surface(
@@ -1417,23 +1723,15 @@ private fun BulkSaleInvoiceModal(
                     }
                 }
 
-                // 2. Select Pricing Unit for Sale
-                Text("2. وحدة التسعير في البيع:", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(activeUnits) { unit ->
-                        FilterChip(
-                            selected = selectedUnit.id == unit.id,
-                            onClick = { selectedUnit = unit },
-                            label = {
-                                Text("${unit.name} (${CalculationEngine.formatWeight(unit.weightKg)} كجم)")
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = WheatGold,
-                                selectedLabelColor = Color.White
-                            )
-                        )
+                // 2. Select Pricing Unit for Sale via Dropdown Selector
+                PricingUnitDropdownSelector(
+                    units = activeUnits,
+                    selectedUnit = selectedUnit,
+                    label = "2. وحدة التسعير في البيع (${selectedProduct.name})",
+                    onUnitSelected = { unit ->
+                        selectedUnit = unit
                     }
-                }
+                )
 
                 // 3. Bulk Total Weight (Kg) & Selling Unit Price
                 Row(
