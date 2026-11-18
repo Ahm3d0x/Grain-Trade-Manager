@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "احسبلي"
+rootProject.name = "برنامج احسبلي"
 
 include(":app")
