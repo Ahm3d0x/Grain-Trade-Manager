@@ -1,10 +1,10 @@
 package com.example
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.fragment.app.FragmentActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -62,8 +62,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.security.AppLockManager
 import com.example.security.LicenseManager
 import com.example.security.LicenseValidationResult
+import com.example.ui.screens.AppLockScreen
 import com.example.ui.screens.CustomersScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.DefinitionsAndSettingsScreen
@@ -87,12 +89,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     private val autoBackupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var isAppLockedState by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        isAppLockedState = savedInstanceState?.getBoolean(KEY_IS_APP_LOCKED)
+            ?: AppLockManager.isLockActive(this)
+
         setContent {
             MyApplicationTheme {
                 val context = LocalContext.current
@@ -101,7 +107,24 @@ class MainActivity : ComponentActivity() {
                 }
 
                 if (licenseStatus is LicenseValidationResult.Valid) {
-                    GrainTradeManagerApp()
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        GrainTradeManagerApp(
+                            onLockAppNow = {
+                                if (AppLockManager.isLockActive(context)) {
+                                    isAppLockedState = true
+                                }
+                            }
+                        )
+
+                        if (isAppLockedState && AppLockManager.isLockActive(context)) {
+                            AppLockScreen(
+                                config = AppLockManager.getConfig(context),
+                                onUnlocked = {
+                                    isAppLockedState = false
+                                }
+                            )
+                        }
+                    }
                 } else {
                     LicenseActivationScreen(
                         initialStatus = licenseStatus,
@@ -119,9 +142,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(KEY_IS_APP_LOCKED, isAppLockedState)
+    }
+
     override fun onStop() {
         super.onStop()
         if (!isChangingConfigurations) {
+            if (!AppLockManager.isSystemAuthInProgress && AppLockManager.shouldLockOnBackground(this)) {
+                isAppLockedState = true
+            }
             val appCtx = applicationContext
             autoBackupScope.launch {
                 AutoBackupManager.performAutoBackupIfChanged(
@@ -131,6 +162,10 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    companion object {
+        private const val KEY_IS_APP_LOCKED = "is_app_locked"
     }
 }
 
@@ -143,7 +178,8 @@ private data class NavItem(
 
 @Composable
 fun GrainTradeManagerApp(
-    viewModel: GrainViewModel = viewModel()
+    viewModel: GrainViewModel = viewModel(),
+    onLockAppNow: (() -> Unit)? = null
 ) {
     val currentScreen by viewModel.currentScreen.collectAsStateWithLifecycle()
     val dashboardPeriod by viewModel.dashboardPeriod.collectAsStateWithLifecycle()
@@ -528,7 +564,8 @@ fun GrainTradeManagerApp(
                                 onSavePricingUnit = viewModel::savePricingUnit,
                                 onSaveSettings = viewModel::saveAppSettings,
                                 onExportBackup = viewModel::exportDatabaseBackup,
-                                onImportBackup = viewModel::importDatabaseBackup
+                                onImportBackup = viewModel::importDatabaseBackup,
+                                onLockAppNow = onLockAppNow
                             )
                         }
                     }

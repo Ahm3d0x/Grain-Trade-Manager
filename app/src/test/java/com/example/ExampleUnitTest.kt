@@ -232,4 +232,47 @@ class ExampleUnitTest {
             tempDir.deleteRecursively()
         }
     }
+
+    @Test
+    fun appLockManager_pinAndPatternHashing_intermediateDots_andMultiMethodConfig() {
+        // 1. PIN validation (strictly 4 digits)
+        assertEquals(true, com.example.security.AppLockManager.isValidPin("1234"))
+        assertEquals(false, com.example.security.AppLockManager.isValidPin("123"))
+        assertEquals(false, com.example.security.AppLockManager.isValidPin("12345"))
+        assertEquals(false, com.example.security.AppLockManager.isValidPin("12a4"))
+
+        // 2. Salted PBKDF2 hash verification
+        val salt = com.example.security.AppLockManager.generateSaltHex()
+        val pinHash = com.example.security.AppLockManager.hashSecret("2580", salt)
+        assertEquals(true, com.example.security.AppLockManager.verifySecret("2580", salt, pinHash))
+        assertEquals(false, com.example.security.AppLockManager.verifySecret("2581", salt, pinHash))
+
+        // 3. 9-Dot pattern normalization and intermediate dot auto-insertion
+        assertEquals(null, com.example.security.AppLockManager.normalizePattern(listOf(0, 1, 2))) // < 4 dots
+        assertEquals("0-1-2-5", com.example.security.AppLockManager.normalizePattern(listOf(0, 1, 2, 5)))
+        assertEquals(1, com.example.security.AppLockManager.getIntermediateDot(0, 2))
+        assertEquals(4, com.example.security.AppLockManager.getIntermediateDot(0, 8))
+        assertEquals(4, com.example.security.AppLockManager.getIntermediateDot(2, 6))
+        assertEquals(3, com.example.security.AppLockManager.getIntermediateDot(0, 6))
+        assertEquals(null, com.example.security.AppLockManager.getIntermediateDot(0, 5))
+
+        // 4. Multi-method combinations (1, 2, or all 3 methods together)
+        val allThree = com.example.security.AppLockConfig(
+            isPinEnabled = true,
+            isPatternEnabled = true,
+            isBiometricEnabled = true
+        )
+        assertEquals(true, allThree.isLockActive)
+        assertEquals(3, allThree.activeMethodCount)
+
+        val twoMethods = com.example.security.AppLockConfig(
+            isPinEnabled = false,
+            isPatternEnabled = true,
+            isBiometricEnabled = true
+        )
+        assertEquals(true, twoMethods.isLockActive)
+        assertEquals(2, twoMethods.activeMethodCount)
+        assertEquals(com.example.security.UnlockMethod.PATTERN, twoMethods.defaultManualMethod)
+    }
 }
+

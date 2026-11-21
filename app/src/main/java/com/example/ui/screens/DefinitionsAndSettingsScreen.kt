@@ -150,7 +150,8 @@ fun DefinitionsAndSettingsScreen(
     onSavePricingUnit: (PricingUnitEntity) -> Unit,
     onSaveSettings: (AppSettingsEntity) -> Unit,
     onExportBackup: ((String) -> Unit) -> Unit,
-    onImportBackup: (String) -> Unit
+    onImportBackup: (String) -> Unit,
+    onLockAppNow: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
 
@@ -508,7 +509,10 @@ fun DefinitionsAndSettingsScreen(
             // =========================================================================
             when (settingsSubTab) {
                 0 -> {
-                    LicenseDetailsSettingsTab(context = context)
+                    LicenseDetailsSettingsTab(
+                        context = context,
+                        onLockAppNow = onLockAppNow
+                    )
                 }
 
                 1 -> {
@@ -936,7 +940,10 @@ private fun MerchantDefinitionsTabContent(
  * Settings Sub-Tab 0: Comprehensive License & Digital Protection Details
  */
 @Composable
-private fun LicenseDetailsSettingsTab(context: Context) {
+private fun LicenseDetailsSettingsTab(
+    context: Context,
+    onLockAppNow: (() -> Unit)? = null
+) {
     var showUpdateLicenseDialog by remember { mutableStateOf(false) }
     var licenseResult by remember { mutableStateOf(LicenseManager.checkLicenseStatus(context)) }
     val currentMachineId = remember { HardwareIdProvider.getHardwareId(context) }
@@ -946,6 +953,14 @@ private fun LicenseDetailsSettingsTab(context: Context) {
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // 0. App Lock & Protection Card (PIN 4 أرقام + نقش 9 نقاط + بصمة الهاتف)
+        item {
+            AppLockSettingsCard(
+                context = context,
+                onLockAppNow = onLockAppNow
+            )
+        }
+
         item {
             Card(
                 modifier = Modifier
@@ -1981,7 +1996,7 @@ private fun AboutAppAndDeveloperTab(context: Context) {
             }
         }
 
-        // 1.5. What's New in Version 3.1 Documentation Card
+        // 1.5. What's New in Version 3.2 Documentation Card
         item {
             Card(
                 modifier = Modifier
@@ -2000,7 +2015,7 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "توثيق مميزات الإصدار الجديد (v3.1)",
+                            text = "توثيق مميزات الإصدار الجديد (v3.2)",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = EmeraldPrimary
@@ -2010,7 +2025,7 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                             color = WheatGoldLight
                         ) {
                             Text(
-                                text = "الإصدار 3.1",
+                                text = "الإصدار 3.2",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = WheatGold,
@@ -2020,12 +2035,12 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                     }
 
                     val v3ReleaseHighlights = listOf(
-                        "سلكتور المحصول في صفحة الشونة (جديد v3.1): تحديد نوع الحبوب من قائمة منسدلة أعلى الشونة بحيث تتحدث الصفحة بالكامل (الكروت الأربع، بطاقة الرصيد، فواتير البيع، وسجل الجفاف) عن المحصول المختار فقط لتجربة خالية من التشتت.",
-                        "سلكتور اختيار الحبوب ووحدة التسعير في الشراء والبيع (جديد v3.1): استبدال صفوف الاختيارات المتزاحمة بقوائم منسدلة ذكية تعرض بيانات المحصول المختار ووحدته القياسية فقط.",
-                        "تحسين شكل وتجربة البحث والفلترة (جديد v3.1): شريط بحث موحد بسطر واحد مع زر مسح فوري (×)، وتبويبات كاملة العرض لنوع الفاتورة (الكل | شراء | بيع)، وقائمتي سلكتور لـ (الحالة والدفع) و(نوع الحبوب) مع عداد نتائج البحث.",
-                        "شاشة المخزن الحي (الشونة) وفواتير البيع المقطوع: عرض فوري للأرصدة بالطن والأردب والكيلوجرام مع حساب متوسط تكلفة الشراء المرجح، وإصدار فواتير بيع وتوريد بالوزن الكلي المقطوع مع حساب صافي الربح الفوري.",
-                        "معالجة عجز الجفاف والغربلة ونظامي الأرباح: دعم (تسوية الجفاف اليدوية) و(تصفير الدفعة عند نفاد المخزن) مع نظامين مرنين لحساب صافي الربح من الإعدادات.",
-                        "تقارير الرسوم البيانية التفاعلية والنسخ الاحتياطي التلقائي (30 يومًا): رسوم بيانية تفاعلية لأرباح كل محصول مع فلترة بالتاريخ، ونسخ احتياطي تلقائي ذكي عند إغلاق التطبيق يحفظ كامل التغيرات لآخر يومين ونسخة يومية موحدة لـ 28 يومًا."
+                        "نظام قفل وحماية البرنامج المتكامل (جديد v3.2): حماية بياناتك وفواتيرك من التلاعب بواسطة الأشخاص أو الأطفال عبر 3 طرق مرنة: رقم سري (PIN من 4 أرقام)، أو نقش أمان (9 نقاط)، أو بصمة الهاتف المسجلة على الجهاز.",
+                        "دمج أكثر من طريقة قفل معاً (جديد v3.2): إمكانية تفعيل طريقة واحدة، أو طريقتين معاً، أو الثلاث طرق معاً مع التبديل الفوري بينها في شاشة القفل، وإعادة القفل تلقائياً عند مغادرة التطبيق، وتشفير آمن للرموز.",
+                        "سلكتور المحصول في صفحة الشونة والشراء والبيع (v3.1): تحديد نوع الحبوب ووحدة التسعير من قوائم منسدلة ذكية لتقليل التشتت وتركيز الشونة على محصول واحد.",
+                        "تحسين شكل وتجربة البحث والفلترة (v3.1): شريط بحث موحد بسطر واحد مع زر مسح فوري (×)، وتبويبات كاملة العرض لنوع الفاتورة، وقائمتي سلكتور لـ (الحالة والدفع) و(نوع الحبوب).",
+                        "شاشة المخزن الحي (الشونة) وفواتير البيع المقطوع: عرض فوري للأرصدة بالطن والأردب والكيلوجرام مع حساب متوسط تكلفة الشراء المرجح وحساب صافي الربح الفوري.",
+                        "تقارير الرسوم البيانية التفاعلية والنسخ الاحتياطي التلقائي (30 يومًا): رسوم بيانية تفاعلية لأرباح كل محصول مع فلترة بالتاريخ، ونسخ احتياطي تلقائي ذكي عند إغلاق التطبيق."
                     )
 
                     v3ReleaseHighlights.forEach { itemText ->
