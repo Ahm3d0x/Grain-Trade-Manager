@@ -39,7 +39,7 @@ object AppUpdateManager {
 
     const val OFFICIAL_GITHUB_REPO = "https://github.com/Ahm3d0x/Grain-Trade-Manager"
     const val OFFICIAL_APK_DOWNLOAD_URL =
-        "https://github.com/Ahm3d0x/Grain-Trade-Manager/raw/main/GrainTradeManager-release.apk"
+        "https://raw.githubusercontent.com/Ahm3d0x/Grain-Trade-Manager/main/GrainTradeManager-release.apk"
     private const val WHATSAPP_INTL = "201140409832"
 
     val currentVersionCode: Int
@@ -139,7 +139,7 @@ object AppUpdateManager {
             val repo = match.groupValues[2].removeSuffix(".git")
             val mainManifest = "https://raw.githubusercontent.com/$owner/$repo/main/version.json"
             val masterManifest = "https://raw.githubusercontent.com/$owner/$repo/master/version.json"
-            val defaultApk = "https://github.com/$owner/$repo/raw/main/GrainTradeManager-release.apk"
+            val defaultApk = "https://raw.githubusercontent.com/$owner/$repo/main/GrainTradeManager-release.apk"
             return listOf(mainManifest, masterManifest) to defaultApk
         }
 

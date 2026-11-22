@@ -1,7 +1,7 @@
 {
   "versionCode": 6,
   "versionName": "3.3",
-  "downloadUrl": "https://github.com/Ahm3d0x/Grain-Trade-Manager/raw/main/GrainTradeManager-release.apk?v=3.3",
+  "downloadUrl": "https://raw.githubusercontent.com/Ahm3d0x/Grain-Trade-Manager/main/GrainTradeManager-release.apk?v=3.3",
   "releaseNotes": "الإصدار 3.3 الجديد من برنامج (احسبلي - UltraSoft):\n• إلغاء السعر الثابت (4000) نهائيًا ليبدأ حقل سعر الوحدة فارغًا دائمًا مع تحسين ظهور الحقل بوضوح أعلى لوحة المفاتيح.\n• ربط نوع الحبوب بوحدة التسعير مباشرة عند التعريف أو التعديل، ليتم تحديد وحدة التسعير تلقائيًا فور اختيار المحصول في الفواتير.\n• إخفاء قائمة العملاء تلقائيًا بمجرد اختيار العميل مع عرض العميل المختار في بطاقة مضغوطة لتوفير مساحة الشاشة.\n• ترتيب صفحة (حول البرنامج والمطور) لتظهر بيانات الشركة والمطور أولًا في الأعلى يليها التحديثات ومميزات الإصدار.\n• توحيد توقيع المطور (UltraSoft • Developed by Eng. Ahmed Mohamed Attia) في شاشة الدخول/القفل، وإضافته مع رقم التواصل (01140409832) أسفل جميع الفواتير المطبوعة (PDF).",
   "isMandatory": false
 }
