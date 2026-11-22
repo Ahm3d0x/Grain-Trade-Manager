@@ -187,7 +187,7 @@ object PdfInvoiceExporter {
                 footerPageNumPaint
             )
             canvas.drawText(
-                "تم التطوير بواسطة أحمد عطية  •  01140409832",
+                "UltraSoft • Developed by Eng. Ahmed Mohamed Attia • 01140409832",
                 PAGE_WIDTH / 2f,
                 PAGE_HEIGHT - 10f,
                 footerDeveloperPaint

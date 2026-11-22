@@ -2137,7 +2137,7 @@ private fun AboutAppAndDeveloperTab(context: Context) {
                                 color = EmeraldPrimary
                             )
                             Text(
-                                text = "تم التطوير بواسطة أحمد عطية • شركة UltraSoft",
+                                text = "هذا البرنامج تحت مظلة شركة UltraSoft",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

@@ -477,18 +477,8 @@ fun LicenseActivationScreen(
             Spacer(modifier = Modifier.height(6.dp))
 
             Text(
-                text = "تم التطوير بواسطة أحمد عطية",
-                fontSize = 12.sp,
-                color = EmeraldPrimary,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(2.dp))
-
-            Text(
                 text = "UltraSoft • Developed by Eng. Ahmed Mohamed Attia",
-                fontSize = 10.sp,
+                fontSize = 11.sp,
                 color = WheatGold,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center

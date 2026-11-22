@@ -497,10 +497,10 @@ fun AppLockScreen(
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
-                    text = "تم التطوير بواسطة أحمد عطية",
-                    style = MaterialTheme.typography.labelLarge,
+                    text = "UltraSoft • Developed by Eng. Ahmed Mohamed Attia",
+                    style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
-                    color = EmeraldPrimary,
+                    color = WheatGold,
                     textAlign = TextAlign.Center
                 )
                 Row(
