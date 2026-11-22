@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -390,6 +392,8 @@ fun GrainTradeManagerApp(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
+                    .consumeWindowInsets(innerPadding)
+                    .imePadding()
             ) {
                 if (isWideScreen) {
                     NavigationRail(
@@ -462,7 +466,7 @@ fun GrainTradeManagerApp(
                                 },
                                 onDeleteSection = viewModel::deleteSectionFromActiveInvoice,
                                 onUpdateHeader = viewModel::updateActiveInvoiceHeader,
-                                onQuickCreateCustomer = viewModel::saveCustomer,
+                                onQuickCreateCustomer = viewModel::quickCreateAndSelectCustomer,
                                 onApproveInvoice = viewModel::approveActiveInvoice,
                                 onRecordPayment = { amt, method, notes ->
                                     activeInvoice?.details?.invoice?.id?.let { id ->
@@ -561,6 +565,7 @@ fun GrainTradeManagerApp(
                                     viewModel.navigateTo(if (section == 1) AppScreen.SETTINGS else AppScreen.DEFINITIONS)
                                 },
                                 onSaveProduct = viewModel::saveProduct,
+                                onSaveProductWithPricingUnit = viewModel::saveProductWithPricingUnit,
                                 onSavePricingUnit = viewModel::savePricingUnit,
                                 onSaveSettings = viewModel::saveAppSettings,
                                 onExportBackup = viewModel::exportDatabaseBackup,

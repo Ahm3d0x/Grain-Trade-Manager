@@ -1571,7 +1571,7 @@ private fun BulkSaleInvoiceModal(
     }
     var selectedUnit by remember(selectedProduct) {
         mutableStateOf(
-            activeUnits.firstOrNull { it.linkedProductId == selectedProduct.id }
+            CalculationEngine.resolveDefaultUnitForProduct(selectedProduct, activeUnits)
                 ?: activeUnits.firstOrNull { it.weightKg == 1000.0 }
                 ?: activeUnits.firstOrNull()
                 ?: PricingUnitEntity(id = 1, name = "طن", weightKg = 1000.0)
@@ -1691,8 +1691,9 @@ private fun BulkSaleInvoiceModal(
                     },
                     onProductSelected = { prod ->
                         selectedProduct = prod
-                        val linked = activeUnits.firstOrNull { it.linkedProductId == prod.id }
-                        if (linked != null) selectedUnit = linked
+                        CalculationEngine.resolveDefaultUnitForProduct(prod, activeUnits)?.let { linked ->
+                            selectedUnit = linked
+                        }
                     }
                 )
 

@@ -272,7 +272,7 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
         customer: CustomerEntity? = null,
         initialProduct: ProductEntity? = null,
         initialUnit: PricingUnitEntity? = null,
-        initialPrice: Double = 4000.0
+        initialPrice: Double = 0.0
     ) {
         viewModelScope.launch {
             val currentId = _activeInvoiceId.value
@@ -306,7 +306,7 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
                 customer = null,
                 initialProduct = null,
                 initialUnit = null,
-                initialPrice = 4000.0
+                initialPrice = 0.0
             )
             if (currentInv != null) {
                 showMessage("تم تعليق الفاتورة #${currentInv.invoiceNumber} وحفظ بياناتها، وفتح فاتورة جديدة")
@@ -328,7 +328,7 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
         val chosenProduct = initialProduct ?: activeProducts.firstOrNull()
             ?: ProductEntity(id = 1, name = "قمح")
         val chosenUnit = initialUnit
-            ?: activeUnits.firstOrNull { it.linkedProductId == chosenProduct.id }
+            ?: CalculationEngine.resolveDefaultUnitForProduct(chosenProduct, activeUnits)
             ?: activeUnits.firstOrNull()
             ?: PricingUnitEntity(id = 1, name = "طن", weightKg = 1000.0)
 
@@ -517,7 +517,7 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
                 customer = null,
                 initialProduct = null,
                 initialUnit = null,
-                initialPrice = 4000.0
+                initialPrice = 0.0
             )
             showMessage("تم حفظ واعتماد الفاتورة #$approvedNum وإضافتها لرصيد الشونة")
         }
@@ -686,6 +686,23 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun quickCreateAndSelectCustomer(customer: CustomerEntity) {
+        viewModelScope.launch {
+            val newId = repository.saveCustomer(customer)
+            val savedCustomer = customer.copy(id = newId)
+            val activeInv = activeInvoiceWithCalc.value?.details?.invoice
+            if (activeInv != null) {
+                repository.updateInvoiceHeader(
+                    invoice = activeInv,
+                    customer = savedCustomer,
+                    notes = activeInv.notes,
+                    auditReason = null
+                )
+            }
+            showMessage("تم حفظ واختيار العميل: ${savedCustomer.name}")
+        }
+    }
+
     fun deleteCustomer(customer: CustomerEntity) {
         viewModelScope.launch {
             val deleted = repository.deleteCustomer(customer)
@@ -702,6 +719,23 @@ class GrainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.saveProduct(product)
             showMessage("تم حفظ محصول: ${product.name}")
+        }
+    }
+
+    fun saveProductWithPricingUnit(
+        product: ProductEntity,
+        selectedUnitId: Long?,
+        newUnitName: String? = null,
+        newUnitWeightKg: Double? = null
+    ) {
+        viewModelScope.launch {
+            repository.saveProductWithPricingUnit(
+                product = product,
+                selectedUnitId = selectedUnitId,
+                newUnitName = newUnitName,
+                newUnitWeightKg = newUnitWeightKg
+            )
+            showMessage("تم حفظ محصول: ${product.name} مع ربط وحدة التسعير")
         }
     }
 

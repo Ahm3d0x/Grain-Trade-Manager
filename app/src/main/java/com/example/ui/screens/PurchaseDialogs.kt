@@ -457,13 +457,18 @@ fun AddOrEditSectionDialog(
     var selectedUnit by remember {
         mutableStateOf(
             activeUnits.find { it.id == existingSection?.unitId }
-                ?: activeUnits.find { it.linkedProductId == selectedProduct.id }
+                ?: CalculationEngine.resolveDefaultUnitForProduct(selectedProduct, activeUnits)
                 ?: activeUnits.firstOrNull()
                 ?: PricingUnitEntity(id = 1, name = "طن", weightKg = 1000.0)
         )
     }
     var priceText by remember {
-        mutableStateOf(existingSection?.unitPrice?.let { CalculationEngine.formatPlainInt(it) } ?: "4000")
+        mutableStateOf(
+            existingSection?.unitPrice
+                ?.takeIf { it > 0.0 }
+                ?.let { CalculationEngine.formatPlainInt(it) }
+                ?: ""
+        )
     }
     var auditReason by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf<String?>(null) }
@@ -483,9 +488,14 @@ fun AddOrEditSectionDialog(
                     products = activeProducts,
                     selectedProduct = selectedProduct,
                     label = "نوع الحبوب",
+                    subtitleFormatter = { prod ->
+                        CalculationEngine.resolveDefaultUnitForProduct(prod, activeUnits)?.let {
+                            "وحدة التسعير: ${it.name} (${CalculationEngine.formatWeight(it.weightKg)} كجم)"
+                        }
+                    },
                     onProductSelected = { prod ->
                         selectedProduct = prod
-                        activeUnits.find { it.linkedProductId == prod.id }?.let { linked ->
+                        CalculationEngine.resolveDefaultUnitForProduct(prod, activeUnits)?.let { linked ->
                             selectedUnit = linked
                         }
                     }
@@ -504,6 +514,7 @@ fun AddOrEditSectionDialog(
                     value = priceText,
                     onValueChange = { priceText = it; errorMsg = null },
                     label = { Text("سعر ${selectedUnit.name} ($currencySymbol)") },
+                    placeholder = { Text("أدخل السعر هنا...") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),

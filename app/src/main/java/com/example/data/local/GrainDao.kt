@@ -47,6 +47,9 @@ interface GrainDao {
     @Update
     suspend fun updateProduct(product: ProductEntity)
 
+    @Query("UPDATE products SET defaultUnitId = :unitId WHERE id = :productId")
+    suspend fun updateProductDefaultUnit(productId: Long, unitId: Long?)
+
     // --- Pricing Units ---
     @Query("SELECT * FROM pricing_units ORDER BY id ASC")
     fun observePricingUnits(): Flow<List<PricingUnitEntity>>

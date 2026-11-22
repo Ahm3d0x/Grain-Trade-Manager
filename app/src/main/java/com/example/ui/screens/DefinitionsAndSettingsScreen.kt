@@ -29,9 +29,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Backup
@@ -147,6 +149,7 @@ fun DefinitionsAndSettingsScreen(
     initialMainSection: Int = 0, // 0 = التعريفات, 1 = الإعدادات
     onMainSectionChanged: ((Int) -> Unit)? = null,
     onSaveProduct: (ProductEntity) -> Unit,
+    onSaveProductWithPricingUnit: (ProductEntity, Long?, String?, Double?) -> Unit = { p, _, _, _ -> onSaveProduct(p) },
     onSavePricingUnit: (PricingUnitEntity) -> Unit,
     onSaveSettings: (AppSettingsEntity) -> Unit,
     onExportBackup: ((String) -> Unit) -> Unit,
@@ -358,6 +361,9 @@ fun DefinitionsAndSettingsScreen(
                         }
 
                         items(products, key = { it.id }) { prod ->
+                            val linkedUnit = remember(prod, pricingUnits) {
+                                CalculationEngine.resolveDefaultUnitForProduct(prod, pricingUnits)
+                            }
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -372,7 +378,10 @@ fun DefinitionsAndSettingsScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
                                         Text(
                                             text = prod.name,
                                             style = MaterialTheme.typography.titleMedium,
@@ -384,6 +393,33 @@ fun DefinitionsAndSettingsScreen(
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
+                                        }
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = if (linkedUnit != null) WheatGoldLight else MaterialTheme.colorScheme.background
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Scale,
+                                                    contentDescription = null,
+                                                    tint = if (linkedUnit != null) WheatGold else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                                Text(
+                                                    text = if (linkedUnit != null) {
+                                                        "وحدة التسعير: ${linkedUnit.name} (${CalculationEngine.formatWeight(linkedUnit.weightKg)} كجم)"
+                                                    } else {
+                                                        "بدون وحدة تسعير مرتبطة"
+                                                    },
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (linkedUnit != null) EmeraldDark else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
                                         }
                                     }
                                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -542,21 +578,49 @@ fun DefinitionsAndSettingsScreen(
 
     // --- Dialogs for Products & Pricing Units ---
     if (showAddProduct || editingProduct != null) {
-        var name by remember { mutableStateOf(editingProduct?.name ?: "") }
-        var desc by remember { mutableStateOf(editingProduct?.description ?: "") }
+        val initialLinkedUnit = remember(editingProduct, pricingUnits) {
+            editingProduct?.let { CalculationEngine.resolveDefaultUnitForProduct(it, pricingUnits) }
+                ?: pricingUnits.firstOrNull { it.isActive }
+                ?: pricingUnits.firstOrNull()
+        }
+        var name by remember(editingProduct?.id) { mutableStateOf(editingProduct?.name ?: "") }
+        var desc by remember(editingProduct?.id) { mutableStateOf(editingProduct?.description ?: "") }
+        var createNewUnitMode by remember(editingProduct?.id) {
+            mutableStateOf(pricingUnits.isEmpty())
+        }
+        var selectedUnit by remember(editingProduct?.id, initialLinkedUnit) {
+            mutableStateOf(initialLinkedUnit)
+        }
+        var newUnitName by remember(editingProduct?.id) { mutableStateOf("") }
+        var newUnitWeightText by remember(editingProduct?.id) { mutableStateOf("") }
         var err by remember { mutableStateOf<String?>(null) }
+
+        val activeUnitsList = remember(pricingUnits) {
+            pricingUnits.filter { it.isActive }.ifEmpty { pricingUnits }
+        }
 
         AlertDialog(
             onDismissRequest = { showAddProduct = false; editingProduct = null },
-            title = { Text(if (editingProduct == null) "إضافة نوع حبوب جديد" else "تعديل نوع الحبوب") },
+            title = {
+                Text(
+                    text = if (editingProduct == null) "إضافة نوع حبوب وربط وحدة التسعير" else "تعديل نوع الحبوب ووحدة التسعير",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it; err = null },
-                        label = { Text("اسم المحصول (مثال: سمسم، كراوية، ذرة)") },
+                        label = { Text("اسم المحصول (مثال: قمح، سمسم، ذرة)") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().testTag("product_name_input")
                     )
                     OutlinedTextField(
                         value = desc,
@@ -565,7 +629,76 @@ fun DefinitionsAndSettingsScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    err?.let { Text(it, color = StatusUnpaidRed, style = MaterialTheme.typography.bodySmall) }
+
+                    HorizontalDivider(color = WheatCardBorder)
+
+                    Text(
+                        text = "وحدة التسعير المرتبطة بهذا المحصول:",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = EmeraldPrimary
+                    )
+
+                    if (activeUnitsList.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FilterChip(
+                                selected = !createNewUnitMode,
+                                onClick = { createNewUnitMode = false; err = null },
+                                label = { Text("اختيار وحدة موجودة") },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = EmeraldPrimary,
+                                    selectedLabelColor = Color.White
+                                ),
+                                modifier = Modifier.weight(1f)
+                            )
+                            FilterChip(
+                                selected = createNewUnitMode,
+                                onClick = { createNewUnitMode = true; err = null },
+                                label = { Text("تعريف وحدة جديدة") },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = WheatGold,
+                                    selectedLabelColor = Color.White
+                                ),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    if (!createNewUnitMode && activeUnitsList.isNotEmpty()) {
+                        val effectiveSelected = selectedUnit ?: activeUnitsList.first()
+                        PricingUnitDropdownSelector(
+                            units = activeUnitsList,
+                            selectedUnit = effectiveSelected,
+                            label = "وحدة التسعير الافتراضية",
+                            onUnitSelected = { unit ->
+                                selectedUnit = unit
+                                err = null
+                            }
+                        )
+                    } else {
+                        OutlinedTextField(
+                            value = newUnitName,
+                            onValueChange = { newUnitName = it; err = null },
+                            label = { Text("اسم وحدة التسعير (مثال: أردب قمح، طن)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("product_new_unit_name_input")
+                        )
+                        OutlinedTextField(
+                            value = newUnitWeightText,
+                            onValueChange = { newUnitWeightText = it; err = null },
+                            label = { Text("وزن الوحدة بالكيلوجرام (مثال: 150)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("product_new_unit_weight_input")
+                        )
+                    }
+
+                    err?.let {
+                        Text(it, color = StatusUnpaidRed, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             },
             confirmButton = {
@@ -575,16 +708,39 @@ fun DefinitionsAndSettingsScreen(
                             err = "يرجى إدخال اسم المحصول"
                             return@Button
                         }
-                        onSaveProduct(
-                            (editingProduct ?: ProductEntity(name = "")).copy(
-                                name = name.trim(),
-                                description = desc.trim()
+                        if (createNewUnitMode) {
+                            val w = newUnitWeightText.toDoubleOrNull()
+                            if (newUnitName.isBlank() || w == null || w <= 0.0) {
+                                err = "يرجى إدخال اسم وحدة التسعير ووزنها بالكيلوجرام"
+                                return@Button
+                            }
+                            onSaveProductWithPricingUnit(
+                                (editingProduct ?: ProductEntity(name = "")).copy(
+                                    name = name.trim(),
+                                    description = desc.trim()
+                                ),
+                                null,
+                                newUnitName.trim(),
+                                w
                             )
-                        )
+                        } else {
+                            val chosenId = selectedUnit?.id ?: activeUnitsList.firstOrNull()?.id
+                            onSaveProductWithPricingUnit(
+                                (editingProduct ?: ProductEntity(name = "")).copy(
+                                    name = name.trim(),
+                                    description = desc.trim(),
+                                    defaultUnitId = chosenId
+                                ),
+                                chosenId,
+                                null,
+                                null
+                            )
+                        }
                         showAddProduct = false
                         editingProduct = null
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
+                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                    modifier = Modifier.testTag("save_product_dialog_button")
                 ) {
                     Text("حفظ")
                 }
@@ -1935,134 +2091,110 @@ private fun AboutAppAndDeveloperTab(context: Context) {
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // 1. App Identity Card (Under UltraSoft Umbrella)
+        // 1. Developer & UltraSoft Company Card (Always First at the Top)
         item {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, WheatCardBorder, RoundedCornerShape(16.dp)),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(18.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Surface(
-                        modifier = Modifier.size(84.dp),
-                        shape = RoundedCornerShape(20.dp),
-                        color = Color(0xFF083926),
-                        shadowElevation = 4.dp
-                    ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.ehsebly_app_icon_fg_1794758461550),
-                            contentDescription = "أيقونة برنامج احسبلي",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-
-                    Text(
-                        text = "برنامج احسبلي",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center
-                    )
-
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = EmeraldLight
-                    ) {
-                        Text(
-                            text = "UltraSoft ERP • الإصدار ${AppUpdateManager.currentVersionName} (بناء رقم ${AppUpdateManager.currentVersionCode})",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = EmeraldPrimary,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                        )
-                    }
-
-                    Text(
-                        text = "أحد الأنظمة الرقمية المتكاملة الصادرة تحت مظلة شركة UltraSoft. صُمم خصيصًا لإدارة الدورة الكاملة لتجارة الحبوب والغلال والشُّوَن: بدءًا من الشراء والوزن بالتجميع الخماسي الآلي، مرورًا بإدارة المخزن الحي (الشونة) وتسويات الجفاف والغربلة، وصولًا إلى فواتير البيع والتوريد للمطاحن وحساب صافي الربح بالرسوم البيانية التفاعلية وإصدار فواتير A4 جاهزة للطباعة والمشاركة.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        lineHeight = 19.sp
-                    )
-                }
-            }
-        }
-
-        // 1.5. What's New in Version 3.2 Documentation Card
-        item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.5.dp, WheatGold, RoundedCornerShape(16.dp)),
+                    .border(1.5.dp, EmeraldPrimary, RoundedCornerShape(16.dp)),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text(
-                            text = "توثيق مميزات الإصدار الجديد (v3.2)",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = EmeraldPrimary
-                        )
-                        Surface(
-                            shape = RoundedCornerShape(20.dp),
-                            color = WheatGoldLight
+                        Box(
+                            modifier = Modifier
+                                .size(58.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color.White)
+                                .border(1.dp, WheatCardBorder, RoundedCornerShape(14.dp))
+                                .padding(6.dp),
+                            contentAlignment = Alignment.Center
                         ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.ultrasoft_logo),
+                                contentDescription = "UltraSoft Logo",
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(
-                                text = "الإصدار 3.2",
-                                style = MaterialTheme.typography.labelMedium,
+                                text = "UltraSoft",
+                                style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = WheatGold,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                color = WheatGold
+                            )
+                            Text(
+                                text = "تطوير: Eng. Ahmed Mohamed Attia",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = EmeraldPrimary
+                            )
+                            Text(
+                                text = "تم التطوير بواسطة أحمد عطية • شركة UltraSoft",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
 
-                    val v3ReleaseHighlights = listOf(
-                        "نظام قفل وحماية البرنامج المتكامل (جديد v3.2): حماية بياناتك وفواتيرك من التلاعب بواسطة الأشخاص أو الأطفال عبر 3 طرق مرنة: رقم سري (PIN من 4 أرقام)، أو نقش أمان (9 نقاط)، أو بصمة الهاتف المسجلة على الجهاز.",
-                        "دمج أكثر من طريقة قفل معاً (جديد v3.2): إمكانية تفعيل طريقة واحدة، أو طريقتين معاً، أو الثلاث طرق معاً مع التبديل الفوري بينها في شاشة القفل، وإعادة القفل تلقائياً عند مغادرة التطبيق، وتشفير آمن للرموز.",
-                        "سلكتور المحصول في صفحة الشونة والشراء والبيع (v3.1): تحديد نوع الحبوب ووحدة التسعير من قوائم منسدلة ذكية لتقليل التشتت وتركيز الشونة على محصول واحد.",
-                        "تحسين شكل وتجربة البحث والفلترة (v3.1): شريط بحث موحد بسطر واحد مع زر مسح فوري (×)، وتبويبات كاملة العرض لنوع الفاتورة، وقائمتي سلكتور لـ (الحالة والدفع) و(نوع الحبوب).",
-                        "شاشة المخزن الحي (الشونة) وفواتير البيع المقطوع: عرض فوري للأرصدة بالطن والأردب والكيلوجرام مع حساب متوسط تكلفة الشراء المرجح وحساب صافي الربح الفوري.",
-                        "تقارير الرسوم البيانية التفاعلية والنسخ الاحتياطي التلقائي (30 يومًا): رسوم بيانية تفاعلية لأرباح كل محصول مع فلترة بالتاريخ، ونسخ احتياطي تلقائي ذكي عند إغلاق التطبيق."
-                    )
+                    HorizontalDivider(color = WheatCardBorder)
 
-                    v3ReleaseHighlights.forEach { itemText ->
-                        Row(
-                            verticalAlignment = Alignment.Top,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = EmeraldLight.copy(alpha = 0.6f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = WheatGold,
-                                modifier = Modifier
-                                    .padding(top = 2.dp)
-                                    .size(16.dp)
+                            Text(
+                                text = "• هذا البرنامج تحت مظلة شركة UltraSoft.",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = EmeraldDark
                             )
                             Text(
-                                text = itemText,
+                                text = "• Developed by Eng. Ahmed Mohamed Attia (01140409832).",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                lineHeight = 18.sp
+                                fontWeight = FontWeight.SemiBold,
+                                color = EmeraldDark
+                            )
+                            Text(
+                                text = "• محمي بنظام التوقيع الرقمي المشفر (UltraSoft Authority Engine - Ed25519).",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = EmeraldDark
                             )
                         }
+                    }
+
+                    Button(
+                        onClick = {
+                            val msg = "السلام عليكم Eng. Ahmed Mohamed Attia، بخصوص برنامج احسبلي (UltraSoft)"
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                data = Uri.parse("https://wa.me/201140409832?text=" + Uri.encode(msg))
+                            }
+                            try {
+                                context.startActivity(intent)
+                            } catch (_: Exception) {
+                                Toast.makeText(context, "تعذر فتح تطبيق واتساب", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("التواصل مع المطور عبر واتساب")
                     }
                 }
             }
@@ -2240,111 +2372,135 @@ private fun AboutAppAndDeveloperTab(context: Context) {
             }
         }
 
-        // 3. Developer & UltraSoft Company Card (With Official UltraSoft Logo)
+        // 3. What's New in Version 3.3 Documentation Card
         item {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.5.dp, EmeraldPrimary, RoundedCornerShape(16.dp)),
+                    .border(1.5.dp, WheatGold, RoundedCornerShape(16.dp)),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(58.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(Color.White)
-                                .border(1.dp, WheatCardBorder, RoundedCornerShape(14.dp))
-                                .padding(6.dp),
-                            contentAlignment = Alignment.Center
+                        Text(
+                            text = "توثيق مميزات الإصدار الجديد (v3.3)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = EmeraldPrimary
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = WheatGoldLight
                         ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.ultrasoft_logo),
-                                contentDescription = "UltraSoft Logo",
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(
-                                text = "UltraSoft",
-                                style = MaterialTheme.typography.titleMedium,
+                                text = "الإصدار 3.3",
+                                style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = WheatGold
-                            )
-                            Text(
-                                text = "تطوير: Eng. Ahmed Mohamed Attia",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = EmeraldPrimary
-                            )
-                            Text(
-                                text = "هذا البرنامج تحت مظلة شركة UltraSoft",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = WheatGold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                             )
                         }
                     }
 
-                    HorizontalDivider(color = WheatCardBorder)
+                    val v3ReleaseHighlights = listOf(
+                        "ربط نوع الحبوب بوحدة التسعير تلقائيًا (جديد v3.3): عند تعريف أو تعديل أي نوع حبوب يمكنك تحديد وحدة التسعير المرتبطة به ليتم اختيارها تلقائيًا فور اختيار المحصول في الفواتير.",
+                        "حقل سعر الوحدة فارغ دائمًا وواضح فوق الكيبورد (جديد v3.3): إلغاء السعر الثابت (4000) نهائيًا ليبدأ حقل السعر فارغًا دائمًا مع تحسين استجابة الشاشة للوحة المفاتيح.",
+                        "إخفاء قائمة العملاء تلقائيًا بعد الاختيار (جديد v3.3): عند اختيار العميل تُطوى القائمة تلقائيًا في بطاقة أنيقة ومضغوطة لتوفير مساحة الشاشة مع زر لتغيير العميل بضغطة واحدة.",
+                        "توثيق بيانات المطور في شاشة الدخول والفواتير المطبوعة (جديد v3.3): عرض بيانات الشركة والمطور أعلى صفحة معلومات البرنامج، وتذييل أنيق باسم المطور ورقم التواصل أسفل جميع فواتير الـ PDF المطبوعة وشاشة تسجيل الدخول.",
+                        "نظام قفل وحماية البرنامج المتكامل (v3.2): حماية بياناتك وفواتيرك عبر 3 طرق مرنة (PIN أو نقش أمان أو بصمة الهاتف) مع إمكانية دمج أكثر من طريقة معًا.",
+                        "سلكتور المحصول والبحث المتطور والشونة والرسوم البيانية (v3.1): متابعة لحظية للمخزن الحي والأرباح والنسخ الاحتياطي التلقائي (30 يومًا)."
+                    )
+
+                    v3ReleaseHighlights.forEach { itemText ->
+                        Row(
+                            verticalAlignment = Alignment.Top,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = WheatGold,
+                                modifier = Modifier
+                                    .padding(top = 2.dp)
+                                    .size(16.dp)
+                            )
+                            Text(
+                                text = itemText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                lineHeight = 18.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. App Identity Card (Under UltraSoft Umbrella)
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, WheatCardBorder, RoundedCornerShape(16.dp)),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Surface(
+                        modifier = Modifier.size(84.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        color = Color(0xFF083926),
+                        shadowElevation = 4.dp
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.ehsebly_app_icon_fg_1794758461550),
+                            contentDescription = "أيقونة برنامج احسبلي",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+
+                    Text(
+                        text = "برنامج احسبلي",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
 
                     Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = EmeraldLight.copy(alpha = 0.6f),
-                        modifier = Modifier.fillMaxWidth()
+                        shape = RoundedCornerShape(20.dp),
+                        color = EmeraldLight
                     ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Text(
-                                text = "• هذا البرنامج تحت مظلة شركة UltraSoft.",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = EmeraldDark
-                            )
-                            Text(
-                                text = "• Developed by Eng. Ahmed Mohamed Attia.",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = EmeraldDark
-                            )
-                            Text(
-                                text = "• محمي بنظام التوقيع الرقمي المشفر (UltraSoft Authority Engine - Ed25519).",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = EmeraldDark
-                            )
-                        }
+                        Text(
+                            text = "UltraSoft ERP • الإصدار ${AppUpdateManager.currentVersionName} (بناء رقم ${AppUpdateManager.currentVersionCode})",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = EmeraldPrimary,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                        )
                     }
 
-                    Button(
-                        onClick = {
-                            val msg = "السلام عليكم Eng. Ahmed Mohamed Attia، بخصوص برنامج احسبلي (UltraSoft)"
-                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                data = Uri.parse("https://wa.me/201140409832?text=" + Uri.encode(msg))
-                            }
-                            try {
-                                context.startActivity(intent)
-                            } catch (_: Exception) {
-                                Toast.makeText(context, "تعذر فتح تطبيق واتساب", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("التواصل مع المطور عبر واتساب")
-                    }
+                    Text(
+                        text = "أحد الأنظمة الرقمية المتكاملة الصادرة تحت مظلة شركة UltraSoft. صُمم خصيصًا لإدارة الدورة الكاملة لتجارة الحبوب والغلال والشُّوَن: بدءًا من الشراء والوزن بالتجميع الخماسي الآلي، مرورًا بإدارة المخزن الحي (الشونة) وتسويات الجفاف والغربلة، وصولًا إلى فواتير البيع والتوريد للمطاحن وحساب صافي الربح بالرسوم البيانية التفاعلية وإصدار فواتير A4 جاهزة للطباعة والمشاركة.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 19.sp
+                    )
                 }
             }
         }

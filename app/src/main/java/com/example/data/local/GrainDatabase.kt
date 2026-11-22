@@ -23,7 +23,7 @@ import kotlinx.coroutines.launch
         InventoryAdjustmentEntity::class,
         AppSettingsEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class GrainDatabase : RoomDatabase() {
@@ -58,6 +58,32 @@ abstract class GrainDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE products ADD COLUMN defaultUnitId INTEGER DEFAULT NULL")
+                db.execSQL(
+                    """
+                    UPDATE products
+                    SET defaultUnitId = (
+                        SELECT pu.id FROM pricing_units pu
+                        WHERE pu.linkedProductId = products.id
+                        ORDER BY pu.id ASC
+                        LIMIT 1
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    UPDATE invoice_sections
+                    SET unitPrice = 0.0
+                    WHERE unitPrice = 4000.0
+                      AND invoiceId IN (SELECT id FROM invoices WHERE status = 'DRAFT')
+                      AND id NOT IN (SELECT DISTINCT sectionId FROM weights)
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getInstance(context: Context): GrainDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -65,7 +91,7 @@ abstract class GrainDatabase : RoomDatabase() {
                     GrainDatabase::class.java,
                     "grain_trade_manager.db"
                 )
-                    .addMigrations(MIGRATION_2_3)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                     .fallbackToDestructiveMigration(true)
                     .build()
                 INSTANCE = instance
@@ -98,31 +124,38 @@ abstract class GrainDatabase : RoomDatabase() {
 
             // 1. Seed Core Grain Products
             val wheatId = dao.insertProduct(ProductEntity(name = "قمح", description = "قمح بلدي"))
-            dao.insertProduct(ProductEntity(name = "أرز", description = "أرز شعير"))
+            val riceId = dao.insertProduct(ProductEntity(name = "أرز", description = "أرز شعير"))
             val yellowCornId = dao.insertProduct(ProductEntity(name = "ذرة صفراء", description = "ذرة صفراء"))
             val whiteCornId = dao.insertProduct(ProductEntity(name = "ذرة بيضاء", description = "ذرة بيضاء"))
             val beansId = dao.insertProduct(ProductEntity(name = "فول", description = "فول بلدي"))
             val barleyId = dao.insertProduct(ProductEntity(name = "شعير", description = "شعير بلدي"))
 
-            // 2. Seed Core Pricing Units
-            dao.insertPricingUnit(
+            // 2. Seed Core Pricing Units and link each crop to its default pricing unit
+            val tonUnitId = dao.insertPricingUnit(
                 PricingUnitEntity(name = "طن", weightKg = 1000.0, linkedProductId = null, linkedProductName = "جميع المحاصيل")
             )
-            dao.insertPricingUnit(
+            val wheatUnitId = dao.insertPricingUnit(
                 PricingUnitEntity(name = "أردب قمح", weightKg = 150.0, linkedProductId = wheatId, linkedProductName = "قمح")
             )
-            dao.insertPricingUnit(
+            val cornUnitId = dao.insertPricingUnit(
                 PricingUnitEntity(name = "أردب ذرة", weightKg = 140.0, linkedProductId = yellowCornId, linkedProductName = "ذرة صفراء")
             )
-            dao.insertPricingUnit(
+            val beansUnitId = dao.insertPricingUnit(
                 PricingUnitEntity(name = "أردب فول", weightKg = 155.0, linkedProductId = beansId, linkedProductName = "فول")
             )
-            dao.insertPricingUnit(
+            val barleyUnitId = dao.insertPricingUnit(
                 PricingUnitEntity(name = "أردب شعير", weightKg = 120.0, linkedProductId = barleyId, linkedProductName = "شعير")
             )
-            dao.insertPricingUnit(
+            val qintarUnitId = dao.insertPricingUnit(
                 PricingUnitEntity(name = "قنطار", weightKg = 50.0, linkedProductId = whiteCornId, linkedProductName = "ذرة بيضاء")
             )
+
+            dao.updateProductDefaultUnit(wheatId, wheatUnitId)
+            dao.updateProductDefaultUnit(riceId, tonUnitId)
+            dao.updateProductDefaultUnit(yellowCornId, cornUnitId)
+            dao.updateProductDefaultUnit(whiteCornId, qintarUnitId)
+            dao.updateProductDefaultUnit(beansId, beansUnitId)
+            dao.updateProductDefaultUnit(barleyId, barleyUnitId)
         }
     }
 }

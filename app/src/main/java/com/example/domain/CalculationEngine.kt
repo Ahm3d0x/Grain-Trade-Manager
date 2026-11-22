@@ -132,6 +132,26 @@ object CalculationEngine {
     const val GROUP_SIZE = 5
 
     /**
+     * Resolves the linked/default pricing unit for a given grain product:
+     * 1) Explicit product.defaultUnitId
+     * 2) Pricing unit whose linkedProductId == product.id
+     * 3) Pricing unit whose linkedProductName matches product.name
+     */
+    fun resolveDefaultUnitForProduct(
+        product: ProductEntity,
+        pricingUnits: List<PricingUnitEntity>
+    ): PricingUnitEntity? {
+        val activeUnits = pricingUnits.filter { it.isActive }.ifEmpty { pricingUnits }
+        val pName = product.name.trim()
+        return product.defaultUnitId?.let { defId ->
+            activeUnits.firstOrNull { it.id == defId }
+                ?: pricingUnits.firstOrNull { it.id == defId }
+        } ?: activeUnits.firstOrNull { it.linkedProductId == product.id }
+            ?: activeUnits.firstOrNull { it.linkedProductName?.trim() == pName }
+            ?: pricingUnits.firstOrNull { it.linkedProductId == product.id }
+    }
+
+    /**
      * Groups weights in chunks of 5 and calculates each group's sum,
      * section total weight, price per kg, and section total financial value.
      */
@@ -369,9 +389,8 @@ object CalculationEngine {
             val pName = prod.name.trim()
 
             // Find standard pricing unit for this crop (e.g., أردب قمح = 150 kg), or fallback to طن (1000 kg)
-            val linkedUnit = pricingUnits.firstOrNull {
-                it.linkedProductId == prod.id || it.linkedProductName?.trim() == pName
-            } ?: pricingUnits.firstOrNull { it.weightKg == 1000.0 }
+            val linkedUnit = resolveDefaultUnitForProduct(prod, pricingUnits)
+                ?: pricingUnits.firstOrNull { it.weightKg == 1000.0 }
                 ?: PricingUnitEntity(name = "طن", weightKg = 1000.0)
 
             // 1. Purchased weight & cost for this product

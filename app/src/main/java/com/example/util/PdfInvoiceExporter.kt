@@ -52,7 +52,7 @@ object PdfInvoiceExporter {
     private const val PAGE_HEIGHT = 842 // A4 height in points
     private const val MARGIN_H = 24f
     private const val TOP_MARGIN = 28f
-    private const val BOTTOM_MARGIN = 42f
+    private const val BOTTOM_MARGIN = 48f
     private const val CONTENT_WIDTH = PAGE_WIDTH - (MARGIN_H * 2)
     private const val MAX_COLUMNS_PER_ROW_BLOCK = 10 // Up to 10 vertical 5-weight columns side-by-side per row
 
@@ -173,13 +173,24 @@ object PdfInvoiceExporter {
             textSize = 9.5f
             textAlign = Paint.Align.CENTER
         }
+        val footerDeveloperPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#6B7280")
+            textSize = 7.5f
+            textAlign = Paint.Align.CENTER
+        }
 
         fun drawPageFooter(pNum: Int) {
             canvas.drawText(
                 "فاتورة رقم #${details.invoice.invoiceNumber}  —  صفحة $pNum",
                 PAGE_WIDTH / 2f,
-                PAGE_HEIGHT - 16f,
+                PAGE_HEIGHT - 22f,
                 footerPageNumPaint
+            )
+            canvas.drawText(
+                "تم التطوير بواسطة أحمد عطية  •  01140409832",
+                PAGE_WIDTH / 2f,
+                PAGE_HEIGHT - 10f,
+                footerDeveloperPaint
             )
         }
 

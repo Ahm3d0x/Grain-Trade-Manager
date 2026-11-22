@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,6 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -26,7 +29,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
@@ -50,6 +55,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -59,7 +65,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.onFocusChanged
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -731,34 +741,57 @@ private fun CustomerAndGrainStepPage(
 ) {
     val activeProducts = remember(products) { products.filter { it.isActive }.ifEmpty { products } }
     val activeUnits = remember(pricingUnits) { pricingUnits.filter { it.isActive }.ifEmpty { pricingUnits } }
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
 
     var searchQuery by remember { mutableStateOf("") }
-    var selectedCustomer by remember(invoice.customerId, customers) {
+    var selectedCustomer by remember(invoice.id, invoice.customerId, customers) {
         mutableStateOf(customers.find { it.id == invoice.customerId })
     }
-    var notesText by remember(invoice.notes) { mutableStateOf(invoice.notes) }
+    // Collapse customer list automatically if a customer is already selected on this invoice;
+    // keep expanded only until the user picks a customer (or cash customer).
+    var isCustomerListExpanded by remember(invoice.id) {
+        mutableStateOf(invoice.customerId == null)
+    }
+    var notesText by remember(invoice.id, invoice.notes) { mutableStateOf(invoice.notes) }
 
     var showNewCustomerInline by remember { mutableStateOf(false) }
     var newCustomerName by remember { mutableStateOf("") }
     var newCustomerPhone by remember { mutableStateOf("") }
 
-    var selectedProduct by remember(firstSection?.productId, activeProducts) {
+    var selectedProduct by remember(firstSection?.id, firstSection?.productId, activeProducts) {
         mutableStateOf(
             activeProducts.find { it.id == firstSection?.productId }
                 ?: activeProducts.firstOrNull()
                 ?: ProductEntity(id = 1, name = "قمح")
         )
     }
-    var selectedUnit by remember(firstSection?.unitId, activeUnits) {
+    var selectedUnit by remember(firstSection?.id, firstSection?.unitId, activeUnits) {
         mutableStateOf(
             activeUnits.find { it.id == firstSection?.unitId }
-                ?: activeUnits.find { it.linkedProductId == selectedProduct.id }
+                ?: CalculationEngine.resolveDefaultUnitForProduct(selectedProduct, activeUnits)
                 ?: activeUnits.firstOrNull()
                 ?: PricingUnitEntity(id = 1, name = "طن", weightKg = 1000.0)
         )
     }
-    var unitPriceText by remember(firstSection?.unitPrice) {
-        mutableStateOf(firstSection?.unitPrice?.let { CalculationEngine.formatPlainInt(it) } ?: "4000")
+    // Always empty when no positive price is set (never pre-filled with 4000)
+    var unitPriceText by remember(firstSection?.id) {
+        mutableStateOf(
+            firstSection?.unitPrice
+                ?.takeIf { it > 0.0 }
+                ?.let { CalculationEngine.formatPlainInt(it) }
+                ?: ""
+        )
+    }
+
+    LaunchedEffect(firstSection?.id, firstSection?.unitPrice) {
+        val dbPrice = firstSection?.unitPrice ?: 0.0
+        val currentParsed = unitPriceText.toDoubleOrNull() ?: 0.0
+        if (dbPrice > 0.0 && currentParsed != dbPrice && unitPriceText.isBlank()) {
+            unitPriceText = CalculationEngine.formatPlainInt(dbPrice)
+        } else if (dbPrice <= 0.0 && currentParsed > 0.0) {
+            unitPriceText = ""
+        }
     }
 
     val filteredCustomers = remember(customers, searchQuery) {
@@ -769,10 +802,12 @@ private fun CustomerAndGrainStepPage(
     }
 
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(14.dp),
+        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // Card 1: Customer Picker (collapses into compact selected card once a customer is chosen)
         item {
             Card(
                 modifier = Modifier
@@ -791,107 +826,237 @@ private fun CustomerAndGrainStepPage(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "1. اختيار العميل",
+                            text = "1. العميل",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
-                        TextButton(onClick = { showNewCustomerInline = !showNewCustomerInline }) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(if (showNewCustomerInline) "قائمة العملاء" else "عميل جديد")
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            if (isCustomerListExpanded) {
+                                TextButton(
+                                    onClick = {
+                                        showNewCustomerInline = !showNewCustomerInline
+                                    }
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(if (showNewCustomerInline) "قائمة العملاء" else "عميل جديد")
+                                }
+                            } else {
+                                TextButton(
+                                    onClick = {
+                                        isCustomerListExpanded = true
+                                        showNewCustomerInline = true
+                                    }
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("عميل جديد")
+                                }
+                            }
                         }
                     }
 
-                    if (showNewCustomerInline) {
-                        OutlinedTextField(
-                            value = newCustomerName,
-                            onValueChange = { newCustomerName = it },
-                            label = { Text("اسم العميل الجديد") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = newCustomerPhone,
-                            onValueChange = { newCustomerPhone = it },
-                            label = { Text("رقم الهاتف") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Button(
-                            onClick = {
-                                if (newCustomerName.isNotBlank()) {
-                                    val c = CustomerEntity(name = newCustomerName.trim(), phone = newCustomerPhone.trim())
-                                    onQuickCreateCustomer(c)
-                                    showNewCustomerInline = false
-                                    newCustomerName = ""
-                                    newCustomerPhone = ""
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("حفظ العميل")
-                        }
-                    } else {
-                        EhseblySearchField(
-                            query = searchQuery,
-                            onQueryChange = { searchQuery = it },
-                            placeholder = "ابحث باسم العميل أو رقم الهاتف..."
-                        )
-
-                        LazyColumn(
+                    // Compact Selected Customer Display (shown whenever the list is collapsed)
+                    if (!isCustomerListExpanded && !showNewCustomerInline) {
+                        val displayName = selectedCustomer?.name ?: "عميل نقدي (بدون تسجيل)"
+                        val displayPhone = selectedCustomer?.phone.orEmpty()
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = EmeraldLight.copy(alpha = 0.7f),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(max = 165.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            item {
-                                val isCash = selectedCustomer == null
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(if (isCash) EmeraldLight else MaterialTheme.colorScheme.background)
-                                        .border(1.dp, if (isCash) EmeraldPrimary else WheatCardBorder, RoundedCornerShape(10.dp))
-                                        .clickable {
-                                            selectedCustomer = null
-                                            onUpdateCustomerAndNotes(null, notesText)
-                                        }
-                                        .padding(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(Icons.Default.Person, contentDescription = null, tint = EmeraldPrimary)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "عميل نقدي (بدون تسجيل)",
-                                        fontWeight = if (isCash) FontWeight.Bold else FontWeight.Normal
-                                    )
+                                .clip(RoundedCornerShape(14.dp))
+                                .border(1.5.dp, EmeraldPrimary.copy(alpha = 0.65f), RoundedCornerShape(14.dp))
+                                .clickable {
+                                    showNewCustomerInline = false
+                                    isCustomerListExpanded = true
                                 }
-                            }
-                            items(filteredCustomers, key = { it.id }) { cust ->
-                                val isSelected = selectedCustomer?.id == cust.id
+                                .testTag("selected_customer_collapsed_card")
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(if (isSelected) EmeraldLight else MaterialTheme.colorScheme.background)
-                                        .border(1.dp, if (isSelected) EmeraldPrimary else WheatCardBorder, RoundedCornerShape(10.dp))
-                                        .clickable {
-                                            selectedCustomer = cust
-                                            onUpdateCustomerAndNotes(cust, notesText)
-                                        }
-                                        .padding(10.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    modifier = Modifier.weight(1f)
                                 ) {
-                                    Column {
-                                        Text(cust.name, fontWeight = FontWeight.Bold)
-                                        if (cust.phone.isNotBlank()) {
-                                            Text(cust.phone, style = MaterialTheme.typography.bodySmall)
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = EmeraldPrimary.copy(alpha = 0.14f),
+                                        modifier = Modifier.size(38.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.Person,
+                                                contentDescription = null,
+                                                tint = EmeraldPrimary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
                                         }
                                     }
-                                    if (isSelected) {
-                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldPrimary)
+                                    Column {
+                                        Text(
+                                            text = displayName,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = EmeraldDark,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        if (displayPhone.isNotBlank()) {
+                                            Text(
+                                                text = displayPhone,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = EmeraldPrimary.copy(alpha = 0.14f)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "تغيير",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = EmeraldPrimary
+                                        )
+                                        Icon(
+                                            imageVector = Icons.Default.ArrowDropDown,
+                                            contentDescription = "تغيير العميل",
+                                            tint = EmeraldPrimary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Expanded Customer Picker or Inline New Customer Form
+                    AnimatedVisibility(visible = isCustomerListExpanded || showNewCustomerInline) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            if (showNewCustomerInline) {
+                                OutlinedTextField(
+                                    value = newCustomerName,
+                                    onValueChange = { newCustomerName = it },
+                                    label = { Text("اسم العميل الجديد") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                OutlinedTextField(
+                                    value = newCustomerPhone,
+                                    onValueChange = { newCustomerPhone = it },
+                                    label = { Text("رقم الهاتف") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Button(
+                                    onClick = {
+                                        if (newCustomerName.isNotBlank()) {
+                                            val c = CustomerEntity(
+                                                name = newCustomerName.trim(),
+                                                phone = newCustomerPhone.trim()
+                                            )
+                                            onQuickCreateCustomer(c)
+                                            showNewCustomerInline = false
+                                            isCustomerListExpanded = false
+                                            newCustomerName = ""
+                                            newCustomerPhone = ""
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("حفظ واختيار العميل")
+                                }
+                            } else {
+                                EhseblySearchField(
+                                    query = searchQuery,
+                                    onQueryChange = { searchQuery = it },
+                                    placeholder = "ابحث باسم العميل أو رقم الهاتف..."
+                                )
+
+                                LazyColumn(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 175.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    item {
+                                        val isCash = selectedCustomer == null
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .background(if (isCash) EmeraldLight else MaterialTheme.colorScheme.background)
+                                                .border(1.dp, if (isCash) EmeraldPrimary else WheatCardBorder, RoundedCornerShape(10.dp))
+                                                .clickable {
+                                                    selectedCustomer = null
+                                                    searchQuery = ""
+                                                    isCustomerListExpanded = false
+                                                    onUpdateCustomerAndNotes(null, notesText)
+                                                }
+                                                .padding(10.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(Icons.Default.Person, contentDescription = null, tint = EmeraldPrimary)
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = "عميل نقدي (بدون تسجيل)",
+                                                    fontWeight = if (isCash) FontWeight.Bold else FontWeight.Normal
+                                                )
+                                            }
+                                            if (isCash) {
+                                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldPrimary)
+                                            }
+                                        }
+                                    }
+                                    items(filteredCustomers, key = { it.id }) { cust ->
+                                        val isSelected = selectedCustomer?.id == cust.id
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .background(if (isSelected) EmeraldLight else MaterialTheme.colorScheme.background)
+                                                .border(1.dp, if (isSelected) EmeraldPrimary else WheatCardBorder, RoundedCornerShape(10.dp))
+                                                .clickable {
+                                                    selectedCustomer = cust
+                                                    searchQuery = ""
+                                                    isCustomerListExpanded = false
+                                                    onUpdateCustomerAndNotes(cust, notesText)
+                                                }
+                                                .padding(10.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column {
+                                                Text(cust.name, fontWeight = FontWeight.Bold)
+                                                if (cust.phone.isNotBlank()) {
+                                                    Text(cust.phone, style = MaterialTheme.typography.bodySmall)
+                                                }
+                                            }
+                                            if (isSelected) {
+                                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldPrimary)
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -901,6 +1066,7 @@ private fun CustomerAndGrainStepPage(
             }
         }
 
+        // Card 2: Grain Type, Linked Pricing Unit, Prominent Price Field (Always Empty by Default), & Notes
         item {
             Card(
                 modifier = Modifier
@@ -924,14 +1090,15 @@ private fun CustomerAndGrainStepPage(
                         selectedProduct = selectedProduct,
                         label = "نوع الحبوب المختار",
                         subtitleFormatter = { prod ->
-                            val linked = activeUnits.find { it.linkedProductId == prod.id }
-                            linked?.let { "الوحدة القياسية: ${it.name} (${CalculationEngine.formatWeight(it.weightKg)} كجم)" }
+                            CalculationEngine.resolveDefaultUnitForProduct(prod, activeUnits)?.let {
+                                "وحدة التسعير المرتبطة: ${it.name} (${CalculationEngine.formatWeight(it.weightKg)} كجم)"
+                            }
                         },
                         onProductSelected = { prod ->
                             selectedProduct = prod
-                            val linkedUnit = activeUnits.find { it.linkedProductId == prod.id } ?: selectedUnit
+                            val linkedUnit = CalculationEngine.resolveDefaultUnitForProduct(prod, activeUnits) ?: selectedUnit
                             selectedUnit = linkedUnit
-                            val p = unitPriceText.toDoubleOrNull() ?: 4000.0
+                            val p = unitPriceText.toDoubleOrNull() ?: 0.0
                             onUpdateFirstSection(prod, linkedUnit, p)
                         }
                     )
@@ -942,49 +1109,73 @@ private fun CustomerAndGrainStepPage(
                         label = "وحدة التسعير لـ (${selectedProduct.name})",
                         onUnitSelected = { unit ->
                             selectedUnit = unit
-                            val p = unitPriceText.toDoubleOrNull() ?: 4000.0
+                            val p = unitPriceText.toDoubleOrNull() ?: 0.0
                             onUpdateFirstSection(selectedProduct, unit, p)
                         }
                     )
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = unitPriceText,
-                            onValueChange = {
-                                unitPriceText = it
-                                val p = it.toDoubleOrNull()
-                                if (p != null && p > 0) {
-                                    onUpdateFirstSection(selectedProduct, selectedUnit, p)
+                    // Prominent full-width Price Field — always empty by default, never pre-filled with 4000
+                    OutlinedTextField(
+                        value = unitPriceText,
+                        onValueChange = { raw ->
+                            val filtered = raw.filter { it.isDigit() || it == '.' }
+                            if (filtered.count { it == '.' } <= 1) {
+                                unitPriceText = filtered
+                                val p = filtered.toDoubleOrNull() ?: 0.0
+                                onUpdateFirstSection(selectedProduct, selectedUnit, p)
+                            }
+                        },
+                        label = { Text("سعر ${selectedUnit.name} ($currencySymbol)") },
+                        placeholder = { Text("أدخل السعر هنا...") },
+                        suffix = {
+                            Text(
+                                text = currencySymbol,
+                                fontWeight = FontWeight.Bold,
+                                color = EmeraldPrimary
+                            )
+                        },
+                        trailingIcon = {
+                            if (unitPriceText.isNotEmpty()) {
+                                IconButton(
+                                    onClick = {
+                                        unitPriceText = ""
+                                        onUpdateFirstSection(selectedProduct, selectedUnit, 0.0)
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Clear,
+                                        contentDescription = "مسح السعر",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
-                            },
-                            label = { Text("سعر ${selectedUnit.name} ($currencySymbol)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        OutlinedTextField(
-                            value = notesText,
-                            onValueChange = {
-                                notesText = it
-                                onUpdateCustomerAndNotes(selectedCustomer, it)
-                            },
-                            label = { Text("ملاحظات (اختياري)") },
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
+                            }
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = EmeraldPrimary,
+                            unfocusedBorderColor = EmeraldPrimary.copy(alpha = 0.55f),
+                            focusedContainerColor = MaterialTheme.colorScheme.background,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.background
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged { focusState ->
+                                if (focusState.isFocused) {
+                                    coroutineScope.launch {
+                                        delay(120)
+                                        listState.animateScrollToItem(1)
+                                    }
+                                }
+                            }
+                            .testTag("first_section_price_input")
+                    )
 
                     val previewPrice = unitPriceText.toDoubleOrNull() ?: 0.0
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = EmeraldLight,
+                        color = if (previewPrice > 0.0) EmeraldLight else WheatGoldLight.copy(alpha = 0.7f),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -998,16 +1189,32 @@ private fun CustomerAndGrainStepPage(
                                 text = "المحصول: ${selectedProduct.name}",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Bold,
-                                color = EmeraldPrimary
+                                color = if (previewPrice > 0.0) EmeraldPrimary else EmeraldDark
                             )
                             Text(
-                                text = "${CalculationEngine.formatCurrency(previewPrice, currencySymbol)} / ${selectedUnit.name} (${CalculationEngine.formatWeight(selectedUnit.weightKg)} كجم)",
+                                text = if (previewPrice > 0.0) {
+                                    "${CalculationEngine.formatCurrency(previewPrice, currencySymbol)} / ${selectedUnit.name} (${CalculationEngine.formatWeight(selectedUnit.weightKg)} كجم)"
+                                } else {
+                                    "السعر غير محدد بعد • ${selectedUnit.name} (${CalculationEngine.formatWeight(selectedUnit.weightKg)} كجم)"
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Bold,
-                                color = EmeraldPrimary
+                                color = if (previewPrice > 0.0) EmeraldPrimary else WheatGold
                             )
                         }
                     }
+
+                    OutlinedTextField(
+                        value = notesText,
+                        onValueChange = {
+                            notesText = it
+                            onUpdateCustomerAndNotes(selectedCustomer, it)
+                        },
+                        label = { Text("ملاحظات الفاتورة (اختياري)") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
         }
@@ -1015,7 +1222,7 @@ private fun CustomerAndGrainStepPage(
         item {
             Button(
                 onClick = {
-                    val p = unitPriceText.toDoubleOrNull() ?: 4000.0
+                    val p = unitPriceText.toDoubleOrNull() ?: 0.0
                     onUpdateCustomerAndNotes(selectedCustomer, notesText)
                     onUpdateFirstSection(selectedProduct, selectedUnit, p)
                     onProceedToWeights()
@@ -1085,8 +1292,13 @@ private fun SectionWeighingStepPage(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        val sectionPriceText = if (sec.unitPrice > 0.0) {
+                            "${CalculationEngine.formatNumber(sec.unitPrice)} $currencySymbol/${sec.unitNameSnapshot}"
+                        } else {
+                            "بدون سعر / ${sec.unitNameSnapshot}"
+                        }
                         Text(
-                            text = "قسم ${sec.sectionOrder}: ${sec.productNameSnapshot} (${CalculationEngine.formatNumber(sec.unitPrice)} $currencySymbol/${sec.unitNameSnapshot})",
+                            text = "قسم ${sec.sectionOrder}: ${sec.productNameSnapshot} ($sectionPriceText)",
                             style = MaterialTheme.typography.labelLarge,
                             color = EmeraldDark,
                             maxLines = 1,

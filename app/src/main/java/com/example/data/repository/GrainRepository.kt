@@ -68,13 +68,56 @@ class GrainRepository(private val db: GrainDatabase) {
         }
     }
 
-    suspend fun savePricingUnit(unit: PricingUnitEntity): Long {
-        return if (unit.id == 0L) {
+    suspend fun saveProductWithPricingUnit(
+        product: ProductEntity,
+        selectedUnitId: Long?,
+        newUnitName: String? = null,
+        newUnitWeightKg: Double? = null
+    ): Long = db.withTransaction {
+        val cleanName = product.name.trim()
+        val cleanDesc = product.description.trim()
+        val creatingNewUnit = !newUnitName.isNullOrBlank() && newUnitWeightKg != null && newUnitWeightKg > 0.0
+
+        val baseProduct = product.copy(
+            name = cleanName,
+            description = cleanDesc,
+            defaultUnitId = if (creatingNewUnit) product.defaultUnitId else selectedUnitId
+        )
+
+        val productId = if (baseProduct.id == 0L) {
+            dao.insertProduct(baseProduct)
+        } else {
+            dao.updateProduct(baseProduct)
+            baseProduct.id
+        }
+
+        if (creatingNewUnit) {
+            val createdUnitId = dao.insertPricingUnit(
+                PricingUnitEntity(
+                    name = newUnitName!!.trim(),
+                    weightKg = newUnitWeightKg!!,
+                    linkedProductId = productId,
+                    linkedProductName = cleanName,
+                    isActive = true
+                )
+            )
+            dao.updateProductDefaultUnit(productId, createdUnitId)
+        }
+
+        productId
+    }
+
+    suspend fun savePricingUnit(unit: PricingUnitEntity): Long = db.withTransaction {
+        val unitId = if (unit.id == 0L) {
             dao.insertPricingUnit(unit)
         } else {
             dao.updatePricingUnit(unit)
             unit.id
         }
+        if (unit.linkedProductId != null) {
+            dao.updateProductDefaultUnit(unit.linkedProductId, unitId)
+        }
+        unitId
     }
 
     // --- Settings ---
@@ -506,6 +549,7 @@ class GrainRepository(private val db: GrainDatabase) {
                 put("id", p.id)
                 put("name", p.name)
                 put("description", p.description)
+                put("defaultUnitId", p.defaultUnitId ?: JSONObject.NULL)
                 put("isActive", p.isActive)
             })
         }
@@ -669,11 +713,13 @@ class GrainRepository(private val db: GrainDatabase) {
         root.optJSONArray("products")?.let { arr ->
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
+                val defUnitId = if (o.isNull("defaultUnitId")) null else o.optLong("defaultUnitId").takeIf { it > 0L }
                 dao.insertProduct(
                     ProductEntity(
                         id = o.getLong("id"),
                         name = o.getString("name"),
                         description = o.optString("description", ""),
+                        defaultUnitId = defUnitId,
                         isActive = o.optBoolean("isActive", true)
                     )
                 )
